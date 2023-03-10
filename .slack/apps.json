@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "ckpd-egtest": {
+      "name": "ckpd-egtest",
+      "app_id": "A04U383PXB2",
+      "enterprise_id": "E7H7XKD2R",
+      "team_id": "T7L5BMRL5",
+      "IsDev": false
+    }
+  },
+  "default": "ckpd-egtest"
+}
