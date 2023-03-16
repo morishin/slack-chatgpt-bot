@@ -3,3 +3,4 @@ package
 .DS_Store
 .slack/*.dev.json
 .env
+.env.ts

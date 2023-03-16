@@ -1,5 +1,7 @@
 import { Trigger } from "deno-slack-api/types.ts";
+import { PopulatedArray } from "https://deno.land/x/deno_slack_api@1.7.0/type-helpers";
 import { TriggerEventTypes } from "https://deno.land/x/deno_slack_api@1.7.0/typed-method-types/workflows/triggers/trigger-event-types.ts";
+import { env } from "../.env.ts";
 import { ReplyWorkflow } from "../workflows/reply_workflow.ts";
 
 const trigger: Trigger<typeof ReplyWorkflow.definition> = {
@@ -16,7 +18,7 @@ const trigger: Trigger<typeof ReplyWorkflow.definition> = {
   },
   event: {
     event_type: TriggerEventTypes.AppMentioned,
-    channel_ids: ["C04SXQZAJ6B"], // tmp
+    channel_ids: env.SLACK_CHANNEL_IDS as PopulatedArray<string>,
   },
 };
 
