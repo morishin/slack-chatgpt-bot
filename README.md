@@ -28,10 +28,11 @@ Step-by-step instructions can be found in our
 
 ## Running Your Project Locally
 
-Make `.env` file and fill values.
+Make `.env` and `.env.ts` files and fill values.
 
 ```sh
 $ cp .env.example .env
+$ cp .env.ts.example .env.ts
 ```
 
 While building your app, you can see your changes propagated to your workspace
