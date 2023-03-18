@@ -1,4 +1,5 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
+import { env } from "../../.env.ts";
 import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
 import { Message, MessageType } from "../types/message_type.ts";
 
@@ -47,20 +48,29 @@ export default SlackFunction(
       return { error };
     }
 
-    // Trim @mention from the message
+    // Trim @mention from an input message
     const content = inputs.message.replace(/<@.+>\s?/, "");
-    const latestMessages = (getResponse.item.latestMessages as Message[] ?? [])
+
+    // Append the new message to the latest messages
+    let latestMessages = (getResponse.item.latestMessages as Message[] ?? [])
       .concat([{
         role: inputs.isUserMessage ? "user" : "assistant",
         content,
       }]);
+
+    // Limit the number of messages to store
+    latestMessages = latestMessages.slice(
+      latestMessages.length - env.MESSAGE_HISTORY_SIZE,
+    );
+
+    // Save the latest messages to datastore
     const putResponse = await client.apps.datastore.put<
       typeof MessageHistoryDatastore.definition
     >({
       datastore: "MessageHistory",
       item: {
         channelId: inputs.channelId,
-        latestMessages: latestMessages,
+        latestMessages,
       },
     });
 
