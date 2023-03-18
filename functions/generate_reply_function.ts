@@ -6,11 +6,11 @@ export const GenerateReplyFunctionDefinition = DefineFunction({
   source_file: "functions/generate_reply_function.ts",
   input_parameters: {
     properties: {
-      message: {
-        type: Schema.types.string,
+      latestMessages: {
+        type: Schema.types.array,
       },
     },
-    required: ["message"],
+    required: ["latestMessages"],
   },
   output_parameters: {
     properties: {
@@ -22,23 +22,16 @@ export const GenerateReplyFunctionDefinition = DefineFunction({
   },
 });
 
-type GPTRole = "assistant" | "user";
-interface RequestBody {
-  message: string;
-  messageHistory?: { role: GPTRole; content: string }[];
-}
-
 export default SlackFunction(
   GenerateReplyFunctionDefinition,
   async ({ inputs, env }) => {
-    const input: RequestBody = { message: inputs.message };
-
-    const messages = [];
-    if (env.INITIAL_SYSTEM_MESSAGE) {
-      messages.push({ role: "system", content: env.INITIAL_SYSTEM_MESSAGE });
-    }
-    messages.push({ role: "user", content: input.message });
-
+    const messages = [
+      { role: "system", content: env.INITIAL_SYSTEM_MESSAGE },
+      ...(inputs.latestMessages.map((message) => ({
+        role: "user",
+        content: message,
+      }))),
+    ];
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
