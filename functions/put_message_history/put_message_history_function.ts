@@ -78,7 +78,7 @@ export default SlackFunction(
       const error = `Failed to save a row in datastore: ${putResponse.error}`;
       return { error };
     } else {
-      console.log(
+      console.info(
         `MessageHistory saved: ${JSON.stringify(putResponse.item, null, 2)}`,
       );
       return { outputs: { latestMessages: putResponse.item.latestMessages } };
