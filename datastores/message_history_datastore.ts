@@ -1,9 +1,7 @@
 import { DefineDatastore, Schema } from "deno-slack-sdk/mod.ts";
+import { MessageType } from "../functions/types/message_type.ts";
 
-type GPTRole = "assistant" | "user";
-export type Message = { role: GPTRole; content: string };
-
-const MessageHistoryDatastore = DefineDatastore({
+export const MessageHistoryDatastore = DefineDatastore({
   name: "MessageHistory",
   primary_key: "channelId",
   attributes: {
@@ -11,10 +9,10 @@ const MessageHistoryDatastore = DefineDatastore({
       type: Schema.types.string,
     },
     latestMessages: {
-      // Message[]
       type: Schema.types.array,
+      items: {
+        type: MessageType,
+      },
     },
   },
 });
-
-export default MessageHistoryDatastore;

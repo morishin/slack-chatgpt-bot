@@ -1,10 +1,11 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { Message } from "../datastores/message_history_datastore.ts";
+import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
+import { Message, MessageType } from "../types/message_type.ts";
 
 export const PutMessageHistoryFunctionDefinition = DefineFunction({
   callback_id: "put_message_history",
   title: "Put a message history record into datastore",
-  source_file: "functions/put_message_history_function.ts",
+  source_file: "functions/put_message_history/put_message_history_function.ts",
   input_parameters: {
     properties: {
       channelId: {
@@ -21,9 +22,11 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
   },
   output_parameters: {
     properties: {
-      // Message[]
       latestMessages: {
         type: Schema.types.array,
+        items: {
+          type: MessageType,
+        },
       },
     },
     required: ["latestMessages"],
@@ -33,7 +36,9 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
 export default SlackFunction(
   PutMessageHistoryFunctionDefinition,
   async ({ inputs, client }) => {
-    const getResponse = await client.apps.datastore.get({
+    const getResponse = await client.apps.datastore.get<
+      typeof MessageHistoryDatastore.definition
+    >({
       datastore: "MessageHistory",
       id: inputs.channelId,
     });
@@ -42,12 +47,16 @@ export default SlackFunction(
       return { error };
     }
 
+    // Trim @mention from the message
+    const content = inputs.message.replace(/<@.+>\s?/, "");
     const latestMessages = (getResponse.item.latestMessages as Message[] ?? [])
       .concat([{
         role: inputs.isUserMessage ? "user" : "assistant",
-        content: inputs.message,
+        content,
       }]);
-    const putResponse = await client.apps.datastore.put({
+    const putResponse = await client.apps.datastore.put<
+      typeof MessageHistoryDatastore.definition
+    >({
       datastore: "MessageHistory",
       item: {
         channelId: inputs.channelId,

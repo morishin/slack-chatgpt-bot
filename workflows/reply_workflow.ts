@@ -1,6 +1,6 @@
 import { DefineWorkflow, Schema } from "deno-slack-sdk/mod.ts";
-import { GenerateReplyFunctionDefinition } from "../functions/generate_reply_function.ts";
-import { PutMessageHistoryFunctionDefinition } from "../functions/put_message_history_function.ts";
+import { GenerateReplyFunctionDefinition } from "../functions/generate_reply/generate_reply_function.ts";
+import { PutMessageHistoryFunctionDefinition } from "../functions/put_message_history/put_message_history_function.ts";
 
 export const ReplyWorkflow = DefineWorkflow({
   callback_id: "reply_workflow",
@@ -14,7 +14,7 @@ export const ReplyWorkflow = DefineWorkflow({
   },
 });
 
-// MessageHistoryDatastore にユーザの発言を保存する
+// Save a user's message to MessageHistoryDatastore
 const putMessageHistoryFunctionOutput = ReplyWorkflow.addStep(
   PutMessageHistoryFunctionDefinition,
   {
@@ -24,7 +24,7 @@ const putMessageHistoryFunctionOutput = ReplyWorkflow.addStep(
   },
 );
 
-// ChatGPT API から返信を生成する
+// Generate a reply message with calling ChatGPT API
 const generateReplyFunctionOutput = ReplyWorkflow.addStep(
   GenerateReplyFunctionDefinition,
   {
@@ -32,13 +32,13 @@ const generateReplyFunctionOutput = ReplyWorkflow.addStep(
   },
 );
 
-// 返信を Slack に送信する
+// Post a reply message to Slack
 ReplyWorkflow.addStep(Schema.slack.functions.SendMessage, {
   channel_id: ReplyWorkflow.inputs.channelId,
   message: generateReplyFunctionOutput.outputs.reply,
 });
 
-// MessageHistoryDatastore に bot の返信を保存する
+// Save a reply message to MessageHistoryDatastore
 ReplyWorkflow.addStep(
   PutMessageHistoryFunctionDefinition,
   {
