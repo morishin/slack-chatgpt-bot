@@ -5,7 +5,7 @@ import GenerateReplyFunction from "./generate_reply_function.ts";
 
 const { createContext } = SlackFunctionTester("generate_reply_function");
 
-Deno.test("Greeting function test", async () => {
+Deno.test("GenerateReplyFunction test", async () => {
   stub(
     globalThis,
     "fetch",
