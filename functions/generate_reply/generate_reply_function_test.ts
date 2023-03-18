@@ -3,9 +3,9 @@ import { assert } from "https://deno.land/std@0.153.0/testing/asserts.ts";
 import { stub } from "https://deno.land/std@0.152.0/testing/mock.ts";
 import GenerateReplyFunction from "./generate_reply_function.ts";
 
-const { createContext } = SlackFunctionTester("greeting_function");
+const { createContext } = SlackFunctionTester("generate_reply_function");
 
-Deno.test("Greeting function test", async () => {
+Deno.test("GenerateReplyFunction test", async () => {
   stub(
     globalThis,
     "fetch",
@@ -34,7 +34,13 @@ Deno.test("Greeting function test", async () => {
         })),
       ),
   );
-  const inputs = { message: "Say Hello." };
-  const { outputs } = await GenerateReplyFunction(createContext({ inputs }));
+  const inputs = {
+    latestMessages: [
+      { role: "user", content: "Say Hello." },
+    ],
+  };
+  const { outputs } = await GenerateReplyFunction(
+    createContext({ inputs }),
+  );
   assert(outputs?.reply === "Hello, world!");
 });
