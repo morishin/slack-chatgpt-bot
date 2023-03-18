@@ -34,7 +34,9 @@ export default SlackFunction(
       { role: "system", content: env.INITIAL_SYSTEM_MESSAGE },
       ...inputs.latestMessages,
     ];
-    console.log(`🔥 ${JSON.stringify(messages, null, 2)}`);
+    console.info(
+      `Payload to send to ChatGPT API: ${JSON.stringify(messages, null, 2)}`,
+    );
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
