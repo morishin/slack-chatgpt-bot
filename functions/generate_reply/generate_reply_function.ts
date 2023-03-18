@@ -8,6 +8,9 @@ export const GenerateReplyFunctionDefinition = DefineFunction({
   source_file: "functions/generate_reply/generate_reply_function.ts",
   input_parameters: {
     properties: {
+      systemMessage: {
+        type: Schema.types.string,
+      },
       latestMessages: {
         type: Schema.types.array,
         items: {
@@ -31,7 +34,10 @@ export default SlackFunction(
   GenerateReplyFunctionDefinition,
   async ({ inputs, env: slackEnv }) => {
     const messages: { role: string; content: string }[] = [
-      { role: "system", content: env.INITIAL_SYSTEM_MESSAGE },
+      {
+        role: "system",
+        content: inputs.systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
+      },
       ...inputs.latestMessages,
     ];
     console.log(
