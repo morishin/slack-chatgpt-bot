@@ -29,6 +29,9 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
           type: MessageType,
         },
       },
+      systemMessage: {
+        type: Schema.types.string,
+      },
     },
     required: ["latestMessages"],
   },
@@ -51,8 +54,13 @@ export default SlackFunction(
     // Trim @mention from an input message
     const content = inputs.message.replace(/<@.+>\s?/, "");
 
+    const inputLatestMessages = getResponse.item.latestMessages as Message[];
+    const inputSystemMessage = getResponse.item.systemMessage as
+      | string
+      | undefined;
+
     // Append the new message to the latest messages
-    let latestMessages = (getResponse.item.latestMessages as Message[] ?? [])
+    let latestMessages = (inputLatestMessages ?? [])
       .concat([{
         role: inputs.isUserMessage ? "user" : "assistant",
         content,
@@ -64,7 +72,7 @@ export default SlackFunction(
     );
 
     // Save the latest messages to datastore
-    const putResponse = await client.apps.datastore.put<
+    const updateResponse = await client.apps.datastore.update<
       typeof MessageHistoryDatastore.definition
     >({
       datastore: "MessageHistory",
@@ -74,14 +82,20 @@ export default SlackFunction(
       },
     });
 
-    if (!putResponse.ok) {
-      const error = `Failed to save a row in datastore: ${putResponse.error}`;
+    if (!updateResponse.ok) {
+      const error =
+        `Failed to save a row in datastore: ${updateResponse.error}`;
       return { error };
     } else {
       console.log(
-        `MessageHistory saved: ${JSON.stringify(putResponse.item, null, 2)}`,
+        `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
       );
-      return { outputs: { latestMessages: putResponse.item.latestMessages } };
+      return {
+        outputs: {
+          latestMessages: updateResponse.item.latestMessages,
+          systemMessage: inputSystemMessage,
+        },
+      };
     }
   },
 );

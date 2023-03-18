@@ -28,6 +28,7 @@ const putMessageHistoryFunctionOutput = ReplyWorkflow.addStep(
 const generateReplyFunctionOutput = ReplyWorkflow.addStep(
   GenerateReplyFunctionDefinition,
   {
+    systemMessage: putMessageHistoryFunctionOutput.outputs.systemMessage,
     latestMessages: putMessageHistoryFunctionOutput.outputs.latestMessages,
   },
 );
