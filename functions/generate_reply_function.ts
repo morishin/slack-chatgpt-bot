@@ -6,6 +6,7 @@ export const GenerateReplyFunctionDefinition = DefineFunction({
   source_file: "functions/generate_reply_function.ts",
   input_parameters: {
     properties: {
+      // Message[]
       latestMessages: {
         type: Schema.types.array,
       },
@@ -44,7 +45,9 @@ export default SlackFunction(
       }),
     });
     const completion = await response.json();
-    console.info(`🌝 ${JSON.stringify(completion, null, 2)}`);
+    console.info(
+      `ChatGPT API Response: ${JSON.stringify(completion, null, 2)}`,
+    );
     const reply = completion.choices[0].message?.content ??
       "Error: No response";
     return { outputs: { reply } };
