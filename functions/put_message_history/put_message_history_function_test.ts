@@ -1,6 +1,6 @@
 import { SlackFunctionTester } from "deno-slack-sdk/mod.ts";
 import { assert } from "https://deno.land/std@0.153.0/testing/asserts.ts";
-import { equal } from "https://deno.land/x/equal/mod.ts";
+import { equal } from "https://deno.land/x/equal@v1.5.0/mod.ts";
 import * as mf from "https://deno.land/x/mock_fetch@0.3.0/mod.ts";
 import PutMessageHistoryFunction from "./put_message_history_function.ts";
 
