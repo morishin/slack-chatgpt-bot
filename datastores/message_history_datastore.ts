@@ -14,5 +14,8 @@ export const MessageHistoryDatastore = DefineDatastore({
         type: MessageType,
       },
     },
+    systemMessage: {
+      type: Schema.types.string,
+    },
   },
 });
