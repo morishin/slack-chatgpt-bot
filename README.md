@@ -58,7 +58,7 @@ Once you're done with development, you can deploy the production version of your
 app to Slack hosting using `slack deploy`:
 
 ```zsh
-$ SLACK_APP_NAME="gpt-bot" SLACK_APP_DISPLAY_NAME="bot" slack deploy
+$ slack deploy
 ```
 
 After deploying, [create a new link trigger](#create-a-link-trigger) for the
