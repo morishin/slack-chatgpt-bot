@@ -1,8 +1,6 @@
-import { Env } from "https://deno.land/x/env@v2.2.0/env.js";
 import { Manifest } from "deno-slack-sdk/mod.ts";
 import { ReplyWorkflow } from "./workflows/reply_workflow.ts";
-
-const env = new Env();
+import { env } from "./.env.ts";
 
 /**
  * The app manifest contains the app's configuration. This
@@ -10,8 +8,8 @@ const env = new Env();
  * https://api.slack.com/future/manifest
  */
 export default Manifest({
-  name: env.get("SLACK_APP_NAME", "gpt-bot") as string,
-  displayName: env.get("SLACK_APP_DISPLAY_NAME", undefined),
+  name: env.SLACK_APP_NAME,
+  displayName: env.SLACK_APP_DISPLAY_NAME,
   description: "Slack bot using OpenAI ChatGPT API",
   icon: "assets/icon.png",
   workflows: [ReplyWorkflow],
