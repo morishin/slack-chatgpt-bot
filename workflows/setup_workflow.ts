@@ -1,6 +1,5 @@
 import { DefineWorkflow, Schema } from "deno-slack-sdk/mod.ts";
-import { env } from "../.env.ts";
-import { SetupFunctionDefinition } from "../functions/setup/setup_function.ts";
+import { SetupModalFunctionDefinition } from "../functions/setup_modal/setup_modal_function.ts";
 
 export const SetupWorkflow = DefineWorkflow({
   callback_id: "setup_workflow",
@@ -12,38 +11,15 @@ export const SetupWorkflow = DefineWorkflow({
         type: Schema.slack.types.channel_id,
       },
     },
-    required: ["interactivity"],
+    required: ["interactivity", "channelId"],
   },
 });
 
-const openFormStep = SetupWorkflow.addStep(
-  Schema.slack.functions.OpenForm,
-  {
-    title: "Setup ChatGPT bot",
-    interactivity: SetupWorkflow.inputs.interactivity,
-    submit_label: "Save",
-    fields: {
-      elements: [{
-        name: "channelId",
-        title: "Channel where the system message is used",
-        type: Schema.slack.types.channel_id,
-        default: SetupWorkflow.inputs.channelId,
-      }, {
-        name: "systemMessage",
-        title: "System message for ChatGPT",
-        type: Schema.types.string,
-        long: true,
-        default: env.INITIAL_SYSTEM_MESSAGE, // TODO: 現在の設定値を入れる
-      }],
-      required: ["channelId", "systemMessage"],
-    },
-  },
-);
-
 SetupWorkflow.addStep(
-  SetupFunctionDefinition,
+  SetupModalFunctionDefinition,
   {
-    channelId: openFormStep.outputs.fields.channelId,
-    systemMessage: openFormStep.outputs.fields.systemMessage,
+    channelId: SetupWorkflow.inputs.channelId,
+    interactivityPointer:
+      SetupWorkflow.inputs.interactivity.interactivity_pointer,
   },
 );
