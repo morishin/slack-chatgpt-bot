@@ -12,7 +12,7 @@ export default Manifest({
   icon: "assets/icon.png",
   workflows: [ReplyWorkflow, SetupWorkflow],
   types: [MessageType],
-  outgoingDomains: ["api.openai.com", "esm.sh"],
+  outgoingDomains: ["api.openai.com"],
   datastores: [MessageHistoryDatastore],
   botScopes: [
     "app_mentions:read",
