@@ -1,5 +1,15 @@
 # Slack Bot using OpenAI ChatGPT API
 
+## Screenshots
+
+<img src="https://user-images.githubusercontent.com/1413408/226177207-8a3b234a-7e0d-4a94-9987-eed6a3f0e108.png" width="480"/>
+
+
+### Configurable
+
+<img src="https://user-images.githubusercontent.com/1413408/226177212-68f0cd07-2922-4637-b11a-15436abd646d.png" width="480"/>
+
+
 **Guide Outline**:
 
 - [Setup](#setup)
