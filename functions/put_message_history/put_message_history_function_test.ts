@@ -20,7 +20,7 @@ const datastoreResponse = {
     ],
   },
 };
-mf.mock("POST@/api/apps.datastore.put", () =>
+mf.mock("POST@/api/apps.datastore.update", () =>
   new Response(
     JSON.stringify(datastoreResponse),
     {
