@@ -3,7 +3,7 @@ import { ConfigurePromptWorkflow } from "../workflows/configure_prompt_workflow.
 
 const trigger: Trigger<typeof ConfigurePromptWorkflow.definition> = {
   type: "shortcut",
-  name: "Configure prompt",
+  name: "Configure ChatGPT bot prompt",
   description: "Configure a prompt message for ChatGPT",
   workflow: `#/workflows/${ConfigurePromptWorkflow.definition.callback_id}`,
   inputs: {
