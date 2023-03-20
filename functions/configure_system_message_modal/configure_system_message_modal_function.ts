@@ -2,11 +2,11 @@ import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { env } from "../../.env.ts";
 import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
 
-export const ConfigurePromptModalFunctionDefinition = DefineFunction({
-  callback_id: "configure_prompt_modal_function",
+export const ConfigureSystemMessageModalFunctionDefinition = DefineFunction({
+  callback_id: "configure_system_message_modal_function",
   title: "Configure ChatGPT bot for a channel",
   source_file:
-    "functions/configure_prompt_modal/configure_prompt_modal_function.ts",
+    "functions/configure_system_message_modal/configure_system_message_modal_function.ts",
   input_parameters: {
     properties: {
       channelId: {
@@ -27,7 +27,7 @@ export const ConfigurePromptModalFunctionDefinition = DefineFunction({
 });
 
 export default SlackFunction(
-  ConfigurePromptModalFunctionDefinition,
+  ConfigureSystemMessageModalFunctionDefinition,
   async ({ inputs, client }) => {
     const getResponse = await client.apps.datastore.get<
       typeof MessageHistoryDatastore.definition
@@ -58,7 +58,7 @@ export default SlackFunction(
     return { completed: false };
   },
 ).addViewSubmissionHandler(
-  ["configure_prompt_modal_view"],
+  ["configure_system_message_modal_view"],
   async ({ view, client }) => {
     const channelId = view.state.values.channel_block.channel
       .selected_channel as string;
@@ -87,11 +87,11 @@ export default SlackFunction(
         response_action: "update",
         view: {
           type: "modal",
-          callback_id: "configure_prompt_modal_view",
+          callback_id: "configure_system_message_modal_view",
           notify_on_close: true,
           title: {
             type: "plain_text",
-            text: "Configure prompt",
+            text: "Configure system message",
           },
           blocks: [
             {
@@ -107,16 +107,16 @@ export default SlackFunction(
     }
   },
 ).addViewClosedHandler(
-  ["configure_prompt_modal_view"],
+  ["configure_system_message_modal_view"],
   () => ({ outputs: {}, completed: true }),
 );
 
 const buildModalView = (channelId: string, systemMessage: string) => ({
   type: "modal",
-  callback_id: "configure_prompt_modal_view",
+  callback_id: "configure_system_message_modal_view",
   title: {
     type: "plain_text",
-    text: "Configure a prompt message for ChatGPT bot",
+    text: "System message",
   },
   submit: {
     type: "plain_text",
