@@ -2,10 +2,11 @@ import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { env } from "../../.env.ts";
 import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
 
-export const SetupModalFunctionDefinition = DefineFunction({
-  callback_id: "setup_modal_function",
+export const ConfigurePromptModalFunctionDefinition = DefineFunction({
+  callback_id: "configure_prompt_modal_function",
   title: "Configure ChatGPT bot for a channel",
-  source_file: "functions/setup_modal/setup_modal_function.ts",
+  source_file:
+    "functions/configure_prompt_modal/configure_prompt_modal_function.ts",
   input_parameters: {
     properties: {
       channelId: {
@@ -26,7 +27,7 @@ export const SetupModalFunctionDefinition = DefineFunction({
 });
 
 export default SlackFunction(
-  SetupModalFunctionDefinition,
+  ConfigurePromptModalFunctionDefinition,
   async ({ inputs, client }) => {
     const getResponse = await client.apps.datastore.get<
       typeof MessageHistoryDatastore.definition
@@ -56,62 +57,66 @@ export default SlackFunction(
     // Set this to continue the interaction with this user
     return { completed: false };
   },
-).addViewSubmissionHandler(["setup_modal_view"], async ({ view, client }) => {
-  const channelId = view.state.values.channel_block.channel
-    .selected_channel as string;
-  const systemMessage = view.state.values.system_message_block
-    .system_message.value as string;
+).addViewSubmissionHandler(
+  ["configure_prompt_modal_view"],
+  async ({ view, client }) => {
+    const channelId = view.state.values.channel_block.channel
+      .selected_channel as string;
+    const systemMessage = view.state.values.system_message_block
+      .system_message.value as string;
 
-  const updateResponse = await client.apps.datastore.update<
-    typeof MessageHistoryDatastore.definition
-  >({
-    datastore: "MessageHistory",
-    item: {
-      channelId,
-      systemMessage,
-    },
-  });
-
-  if (!updateResponse.ok) {
-    const error = `Failed to save a row in datastore: ${updateResponse.error}`;
-    return { error };
-  } else {
-    console.log(
-      `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
-    );
-    return {
-      response_action: "update",
-      view: {
-        type: "modal",
-        callback_id: "setup_modal_view",
-        notify_on_close: true,
-        title: {
-          type: "plain_text",
-          text: "Setup GPT bot",
-        },
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "plain_text",
-              text: "✅ Updated!",
-            },
-          },
-        ],
+    const updateResponse = await client.apps.datastore.update<
+      typeof MessageHistoryDatastore.definition
+    >({
+      datastore: "MessageHistory",
+      item: {
+        channelId,
+        systemMessage,
       },
-    };
-  }
-}).addViewClosedHandler(
-  ["setup_modal_view"],
+    });
+
+    if (!updateResponse.ok) {
+      const error =
+        `Failed to save a row in datastore: ${updateResponse.error}`;
+      return { error };
+    } else {
+      console.log(
+        `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
+      );
+      return {
+        response_action: "update",
+        view: {
+          type: "modal",
+          callback_id: "configure_prompt_modal_view",
+          notify_on_close: true,
+          title: {
+            type: "plain_text",
+            text: "Configure prompt",
+          },
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "plain_text",
+                text: "✅ Updated!",
+              },
+            },
+          ],
+        },
+      };
+    }
+  },
+).addViewClosedHandler(
+  ["configure_prompt_modal_view"],
   () => ({ outputs: {}, completed: true }),
 );
 
 const buildModalView = (channelId: string, systemMessage: string) => ({
   type: "modal",
-  callback_id: "setup_modal_view",
+  callback_id: "configure_prompt_modal_view",
   title: {
     type: "plain_text",
-    text: "Setup GPT bot",
+    text: "Configure a prompt message for ChatGPT bot",
   },
   submit: {
     type: "plain_text",
