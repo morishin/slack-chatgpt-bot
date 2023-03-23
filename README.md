@@ -3,8 +3,22 @@
 A ChatGPT Slack Bot.
 
 This is a Slack app using [Slack's next-gen platform](https://api.slack.com/future/intro).
+You'll need a Slack workspace on a _paid plan_ you can work on.
+
+## Features
+
+- You can talk to the bot by adding @mention.
+- The bot keeps and uses a conversation history.
+    - The history size can be specified as `MESSAGE_HISTORY_SIZE` in `.env.ts`
+    - Using [Slack Datastores](https://api.slack.com/future/datastores)
+- You can invite the bot to any channel after installing. (via Slack workflow)
+- You can configure a [system message](https://platform.openai.com/docs/guides/chat/introduction) of ChatGPT for each channel. (via Slack workflow)
+
+<img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
 ## Usage
+
+Firstly, install this app on your workspace as described in the [Development](#development) section.
 
 ### Invite your bot
 
@@ -30,7 +44,7 @@ This is a Slack app using [Slack's next-gen platform](https://api.slack.com/futu
 
 1. Mention your bot in a channel where the bot invited.
 
-    <img width="310" src="https://user-images.githubusercontent.com/1413408/226386402-c48cc5ba-ca8c-4d9a-8a0f-48364f21c1d8.png">
+    <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
 ## Development
 
@@ -171,6 +185,48 @@ $ slack deploy
 After deploying, [create a new link trigger](#create-a-link-trigger) for the
 production version of your app (not appended with `(dev)`). Once the trigger is
 invoked, the workflow should run just as it did in when developing locally.
+
+```zsh
+$ slack trigger create --trigger-def triggers/configure_channels_trigger.ts
+
+? Select a workspace your-workspace TXXXXXXX
+? Choose an app environment Local AXXXXXXXXXX
+
+⚡ Trigger created
+   Trigger ID:   FtXXXXXXXXXX
+   Trigger Type: shortcut
+   Trigger Name: Invite ChatGPT bot
+   Trigger Created Time: 2023-03-21 00:06:03 +09:00
+   Trigger Updated Time: 2023-03-21 00:06:03 +09:00
+   URL: https://slack.com/shortcuts/FtXXXXXXXXXX/0faaaaaaaaaaaaaaaaaaaaaaaaaaa
+```
+
+```zsh
+$ slack trigger create --trigger-def triggers/configure_system_message_trigger.ts
+
+? Select a workspace your-workspace TXXXXXXX
+? Choose an app environment Local AXXXXXXXXXX
+
+⚡ Trigger created
+   Trigger ID:   FtXXXXXXXXXX
+   Trigger Type: shortcut
+   Trigger Name: Configure ChatGPT system message
+   Trigger Created Time: 2023-03-21 00:06:03 +09:00
+   Trigger Updated Time: 2023-03-21 00:06:03 +09:00
+   URL: https://slack.com/shortcuts/FtXXXXXXXXXX/0fbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+```
+
+Also [set environment variables](https://api.slack.com/future/run#environment-variables) for the production version of your app. The `.env` will not be used when you run `slack deploy`.
+
+```zsh
+$ slack env add
+? Choose a deployed environment <your workspace>
+? Variable name OPENAI_API_KEY
+? Variable value ***************************************************
+
+ APP  <your app id>
+✨  successfully added OPENAI_API_KEY to app environment variables
+```
 
 #### Viewing Activity Logs
 
