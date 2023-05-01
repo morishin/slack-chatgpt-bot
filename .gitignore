@@ -4,3 +4,4 @@ package
 .slack/*.json
 .env
 env.ts
+assets/icon.png
