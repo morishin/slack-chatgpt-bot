@@ -1,6 +1,6 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { MessageType } from "../types/message_type.ts";
-import { env } from "../../.env.ts";
+import { env } from "../../env.ts";
 
 export const GenerateReplyFunctionDefinition = DefineFunction({
   callback_id: "generate_reply_function",

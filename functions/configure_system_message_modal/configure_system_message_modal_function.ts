@@ -1,5 +1,5 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { env } from "../../.env.ts";
+import { env } from "../../env.ts";
 import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
 
 export const ConfigureSystemMessageModalFunctionDefinition = DefineFunction({

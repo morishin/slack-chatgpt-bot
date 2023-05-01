@@ -4,7 +4,7 @@ import { EventTriggerResponseObject } from "deno-slack-api/typed-method-types/wo
 import { ValidTriggerTypes } from "deno-slack-api/typed-method-types/workflows/triggers/mod.ts";
 import { TriggerEventTypes } from "deno-slack-api/typed-method-types/workflows/triggers/trigger-event-types.ts";
 import { SlackAPIClient } from "deno-slack-api/types.ts";
-import { env } from "../../.env.ts";
+import { env } from "../../env.ts";
 import { ReplyWorkflow } from "../../workflows/reply_workflow.ts";
 
 export const ConfigureChannelsModalFunctionDefinition = DefineFunction({

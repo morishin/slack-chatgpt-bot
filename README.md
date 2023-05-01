@@ -9,7 +9,7 @@ You'll need a Slack workspace on a _paid plan_ you can work on.
 
 - You can talk to the bot by adding @mention.
 - The bot keeps and uses a conversation history.
-    - The history size can be specified as `MESSAGE_HISTORY_SIZE` in `.env.ts`
+    - The history size can be specified as `MESSAGE_HISTORY_SIZE` in `env.ts`
     - Using [Slack Datastores](https://api.slack.com/future/datastores)
 - You can invite the bot to any channel after installing. (via Slack workflow)
 - You can configure a [system message](https://platform.openai.com/docs/guides/chat/introduction) of ChatGPT for each channel. (via Slack workflow)
@@ -80,11 +80,11 @@ Step-by-step instructions can be found in our
 
 #### Make environment file
 
-Make `.env` and `.env.ts` files and fill values.
+Make `.env` and `env.ts` files and fill values.
 
 ```sh
 $ cp .env.example .env
-$ cp .env.ts.example .env.ts
+$ cp env.ts.example env.ts
 ```
 
 #### Create a Link Trigger
