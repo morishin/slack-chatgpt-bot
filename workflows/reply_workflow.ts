@@ -1,6 +1,6 @@
 import { DefineWorkflow, Schema } from "deno-slack-sdk/mod.ts";
-import { GenerateReplyFunctionDefinition } from "../functions/generate_reply/generate_reply_function.ts";
 import { PutMessageHistoryFunctionDefinition } from "../functions/put_message_history/put_message_history_function.ts";
+import { StreamReplyFunctionDefinition } from "../functions/stream_reply/stream_reply_function.ts";
 
 export const ReplyWorkflow = DefineWorkflow({
   callback_id: "reply_workflow",
@@ -24,27 +24,22 @@ const putMessageHistoryFunctionOutput = ReplyWorkflow.addStep(
   },
 );
 
-// Generate a reply message with calling ChatGPT API
-const generateReplyFunctionOutput = ReplyWorkflow.addStep(
-  GenerateReplyFunctionDefinition,
+// Generate and post a reply message
+const streamReplyFunctionOutput = ReplyWorkflow.addStep(
+  StreamReplyFunctionDefinition,
   {
+    channelId: ReplyWorkflow.inputs.channelId,
     systemMessage: putMessageHistoryFunctionOutput.outputs.systemMessage,
     latestMessages: putMessageHistoryFunctionOutput.outputs.latestMessages,
   },
 );
-
-// Post a reply message to Slack
-ReplyWorkflow.addStep(Schema.slack.functions.SendMessage, {
-  channel_id: ReplyWorkflow.inputs.channelId,
-  message: generateReplyFunctionOutput.outputs.reply,
-});
 
 // Save a reply message to MessageHistoryDatastore
 ReplyWorkflow.addStep(
   PutMessageHistoryFunctionDefinition,
   {
     channelId: ReplyWorkflow.inputs.channelId,
-    message: generateReplyFunctionOutput.outputs.reply,
+    message: streamReplyFunctionOutput.outputs.reply,
     isUserMessage: false,
   },
 );
