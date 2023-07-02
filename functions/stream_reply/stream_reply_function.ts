@@ -131,8 +131,8 @@ export default SlackFunction(
       );
     }
 
-    await postMessage(state);
     clearInterval(intervalId);
+    await postMessage(state);
 
     return { outputs: { reply: state.currentMessage } };
   },
