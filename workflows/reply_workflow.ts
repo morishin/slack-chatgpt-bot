@@ -31,6 +31,7 @@ const streamReplyFunctionOutput = ReplyWorkflow.addStep(
     channelId: ReplyWorkflow.inputs.channelId,
     systemMessage: putMessageHistoryFunctionOutput.outputs.systemMessage,
     latestMessages: putMessageHistoryFunctionOutput.outputs.latestMessages,
+    skip: putMessageHistoryFunctionOutput.outputs.skipped,
   },
 );
 
@@ -41,5 +42,6 @@ ReplyWorkflow.addStep(
     channelId: ReplyWorkflow.inputs.channelId,
     message: streamReplyFunctionOutput.outputs.reply,
     isUserMessage: false,
+    skip: streamReplyFunctionOutput.outputs.skipped,
   },
 );

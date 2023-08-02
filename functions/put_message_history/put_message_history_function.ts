@@ -18,6 +18,9 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
       isUserMessage: {
         type: Schema.types.boolean,
       },
+      skip: {
+        type: Schema.types.boolean,
+      },
     },
     required: ["channelId", "message", "isUserMessage"],
   },
@@ -32,6 +35,9 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
       systemMessage: {
         type: Schema.types.string,
       },
+      skipped: {
+        type: Schema.types.boolean,
+      },
     },
     required: ["latestMessages"],
   },
@@ -40,6 +46,20 @@ export const PutMessageHistoryFunctionDefinition = DefineFunction({
 export default SlackFunction(
   PutMessageHistoryFunctionDefinition,
   async ({ inputs, client }) => {
+    // Trim @mention from an input message
+    const content = inputs.message.replace(/<@.+>\s?/, "");
+
+    // This and the following functions should be skipped if the message is empty
+    if (inputs.skip || content.replaceAll(/\s/g, "").length === 0) {
+      console.log("Skipping: PutMessageHistoryFunction");
+      return {
+        outputs: {
+          latestMessages: [],
+          skipped: true,
+        },
+      };
+    }
+
     const getResponse = await client.apps.datastore.get<
       typeof MessageHistoryDatastore.definition
     >({
@@ -50,9 +70,6 @@ export default SlackFunction(
       const error = `Failed to get a row from datastore: ${getResponse.error}`;
       return { error };
     }
-
-    // Trim @mention from an input message
-    const content = inputs.message.replace(/<@.+>\s?/, "");
 
     const inputLatestMessages = getResponse.item.latestMessages as Message[];
     const inputSystemMessage = getResponse.item.systemMessage as

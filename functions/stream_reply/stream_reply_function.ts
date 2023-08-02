@@ -21,6 +21,9 @@ export const StreamReplyFunctionDefinition = DefineFunction({
           type: MessageType,
         },
       },
+      skip: {
+        type: Schema.types.boolean,
+      },
     },
     required: ["channelId", "latestMessages"],
   },
@@ -28,6 +31,9 @@ export const StreamReplyFunctionDefinition = DefineFunction({
     properties: {
       reply: {
         type: Schema.types.string,
+      },
+      skipped: {
+        type: Schema.types.boolean,
       },
     },
     required: ["reply"],
@@ -44,6 +50,17 @@ type State = {
 export default SlackFunction(
   StreamReplyFunctionDefinition,
   async ({ inputs, client, env: slackEnv }) => {
+    // This and the following functions should be skipped if skip is true
+    if (inputs.skip) {
+      console.log("Skipping: StreamReplyFunction");
+      return {
+        outputs: {
+          reply: "",
+          skipped: true,
+        },
+      };
+    }
+
     const messages: { role: string; content: string }[] = [
       {
         role: "system",
