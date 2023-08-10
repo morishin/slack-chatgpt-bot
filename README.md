@@ -16,6 +16,10 @@ You'll need a Slack workspace on a _paid plan_ you can work on.
 
 <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
+https://github.com/morishin/slack-chatgpt-bot/assets/1413408/a01c1a53-5594-4d5c-bb6d-f2f82e77b0ab
+
+
+
 ## Usage
 
 Firstly, install this app on your workspace as described in the [Development](#development) section.
