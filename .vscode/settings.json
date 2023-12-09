@@ -5,6 +5,7 @@
   "deno.suggest.imports.hosts": {
     "https://deno.land": false
   },
+  "deno.importMap": "./import_map.json",
   "[typescript]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "denoland.vscode-deno"
