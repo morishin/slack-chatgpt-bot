@@ -16,9 +16,7 @@ You'll need a Slack workspace on a _paid plan_ you can work on.
 
 <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
-https://github.com/morishin/slack-chatgpt-bot/assets/1413408/a01c1a53-5594-4d5c-bb6d-f2f82e77b0ab
-
-
+https://github.com/morishin/slack-chatgpt-bot/assets/1413408/ba7f104f-1049-420f-860c-dc1feb3c3191
 
 ## Usage
 
@@ -26,9 +24,9 @@ Firstly, install this app on your workspace as described in the [Development](#d
 
 ### Invite your bot
 
-1. Post a shortcut URL of a [link trigger](https://api.slack.com/future/triggers/link) to a channel.
+1. Invite your bot via the slash command.
 
-    <img width="494" src="https://user-images.githubusercontent.com/1413408/226386412-603921c3-4f89-446f-ad8e-915521ea85d6.png">
+   <img src="https://github.com/morishin/slack-chatgpt-bot/assets/1413408/13a0b1e4-9704-4525-9834-46392e626e94" width="486"/>
 
 1. Click "Start" and select channels where you would like the bot to work.
 
@@ -36,9 +34,9 @@ Firstly, install this app on your workspace as described in the [Development](#d
 
 ### Configure a system message for ChatGPT API
 
-1. Post a shortcut URL of a [link trigger](https://api.slack.com/future/triggers/link) to a channel.
+1. Open the configuration dialog via the slash command.
 
-    <img width="476" src="https://user-images.githubusercontent.com/1413408/226386410-7c2c57db-68f8-4a5d-a68e-d1c5e59fa940.png">
+    <img src="https://github.com/morishin/slack-chatgpt-bot/assets/1413408/d25b40ee-e882-4e70-9f80-7d9aa5543256" width="519"/>
 
 1. Click "Start" and input a system message.
 
