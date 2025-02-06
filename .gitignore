@@ -1,7 +1,7 @@
 dist
 package
 .DS_Store
-.slack/*.json
+.slack
 .env
 env.ts
 assets/icon.png
