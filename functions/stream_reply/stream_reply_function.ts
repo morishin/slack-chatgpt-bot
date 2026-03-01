@@ -1,7 +1,13 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
+import {
+  generateText,
+  streamText,
+  type ModelMessage,
+} from "npm:ai";
+import { createOpenAI } from "npm:@ai-sdk/openai";
 
 import { env } from "../../env.ts";
-import { Message as ConversationMessage, MessageType } from "../types/message_type.ts";
+import { MessageType } from "../types/message_type.ts";
 
 export const StreamReplyFunctionDefinition = DefineFunction({
   callback_id: "stream_reply_function",
@@ -52,78 +58,38 @@ export const StreamReplyFunctionDefinition = DefineFunction({
   },
 });
 
-type State = {
-  reply: string;
-};
-
-type OpenAIStreamChunk = {
-  choices?: Array<{
-    delta?: Partial<ConversationMessage>;
-  }>;
-};
-
 type SlackStreamResponse = {
   ok: boolean;
   error?: string;
   ts?: string;
 };
 
-const generateNonStreamingReply = async (
-  messages: { role: string; content: string }[],
-  openAIKey: string,
-): Promise<string> => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${openAIKey}`,
+const buildMessages = (
+  systemMessage: string | undefined,
+  latestMessages: { role: string; content: string }[],
+): ModelMessage[] => {
+  return [
+    {
+      role: "system",
+      content: systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
     },
-    body: JSON.stringify({
-      model: env.GPT_MODEL,
-      messages,
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `OpenAI API request failed (non-stream): ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const completion = await response.json();
-  return completion.choices?.[0]?.message?.content ?? "";
+    ...latestMessages.map((message) => ({
+      role: message.role as "assistant" | "user",
+      content: message.content,
+    })),
+  ];
 };
 
-const processOpenAIStreamLine = (
-  rawLine: string,
-  state: State,
-): string | null => {
-  const line = rawLine.trim();
-  if (!line.startsWith("data:")) {
-    return null;
-  }
-
-  const payload = line.replace(/^data:\s?/, "");
-  if (!payload || payload === "[DONE]") {
-    return null;
-  }
-
-  let chunk: OpenAIStreamChunk;
-  try {
-    chunk = JSON.parse(payload) as OpenAIStreamChunk;
-  } catch (error) {
-    console.warn(`Failed to parse stream chunk: ${payload}`, error);
-    return null;
-  }
-
-  const content = chunk.choices?.[0]?.delta?.content;
-  if (!content) {
-    return null;
-  }
-
-  state.reply += content;
-  return content;
+const generateNonStreamingReply = async (
+  messages: ModelMessage[],
+  openAIKey: string,
+): Promise<string> => {
+  const openAI = createOpenAI({ apiKey: openAIKey });
+  const { text } = await generateText({
+    model: openAI(env.GPT_MODEL),
+    messages,
+  });
+  return text;
 };
 
 export default SlackFunction(
@@ -139,13 +105,7 @@ export default SlackFunction(
       };
     }
 
-    const messages: { role: string; content: string }[] = [
-      {
-        role: "system",
-        content: inputs.systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
-      },
-      ...inputs.latestMessages,
-    ];
+    const messages = buildMessages(inputs.systemMessage, inputs.latestMessages);
     console.log(
       `Payload to send to ChatGPT API: ${JSON.stringify(messages, null, 2)}`,
     );
@@ -166,26 +126,13 @@ export default SlackFunction(
       return { outputs: { reply } };
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${slackEnv.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: env.GPT_MODEL,
-        messages,
-        stream: true,
-      }),
+    const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
+    const streamResult = streamText({
+      model: openAI(env.GPT_MODEL),
+      messages,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `OpenAI API request failed (stream): ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const state: State = { reply: "" };
+    let reply = "";
     const effectiveThreadTs = inputs.threadTs ?? inputs.messageTs;
 
     let streamTs: string | null = null;
@@ -226,37 +173,13 @@ export default SlackFunction(
       }
     };
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Failed to get reader from response");
-    }
+    for await (const content of streamResult.textStream) {
+      if (!content) continue;
 
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const content = processOpenAIStreamLine(line, state);
-        if (!content) continue;
-
-        pending += content;
-        if (pending.length >= 80) {
-          await flushPending();
-        }
-      }
-    }
-
-    if (buffer.length > 0) {
-      const content = processOpenAIStreamLine(buffer, state);
-      if (content) {
-        pending += content;
+      reply += content;
+      pending += content;
+      if (pending.length >= 80) {
+        await flushPending();
       }
     }
 
@@ -274,6 +197,6 @@ export default SlackFunction(
       }
     }
 
-    return { outputs: { reply: state.reply } };
+    return { outputs: { reply } };
   },
 );
