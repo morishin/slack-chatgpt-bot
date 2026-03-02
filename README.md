@@ -8,9 +8,8 @@ You'll need a Slack workspace on a _paid plan_ you can work on.
 ## Features
 
 - You can talk to the bot by adding @mention.
-- The bot keeps and uses a conversation history.
-    - The history size can be specified as `MESSAGE_HISTORY_SIZE` in `env.ts`
-    - Using [Slack Datastores](https://api.slack.com/future/datastores)
+- The bot continues conversation context via OpenAI Responses API (`previous_response_id` chaining).
+    - Chain timeout can be configured with `RESPONSE_CHAIN_TIMEOUT_MINUTES` (Slack app env)
 - You can invite the bot to any channel after installing. (via Slack workflow)
 - You can configure a [system message](https://platform.openai.com/docs/guides/chat/introduction) of ChatGPT for each channel. (via Slack workflow)
 
