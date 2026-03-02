@@ -28,6 +28,7 @@
 - Use Git for all development work.
 - Work on a feature branch. Do not commit directly to `main`.
 - After an implementation reaches a good state and the developer confirms OK, create a commit before starting the next implementation request.
+- Commit at an appropriate granularity to make reviews easier for developers. Specifically, commit once the spec content is finalized, and then commit each time a single task is completed.
 - If the developer reports issues, fix first and do not commit until the state is good.
 - Write commit messages in English.
 
