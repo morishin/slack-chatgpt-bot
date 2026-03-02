@@ -8,5 +8,6 @@
 - [x] Keep Slack native streaming integration (`chat.startStream/appendStream/stopStream`)
 - [x] Keep missing-context fallback with non-streaming reply posting
 - [x] Update or replace tests for new conversation-state behavior
+- [x] Remove `latestMessages` storage and keep datastore name compatibility (`MessageHistory`)
 - [x] Run `deno check manifest.ts`
 - [x] Run test suite
