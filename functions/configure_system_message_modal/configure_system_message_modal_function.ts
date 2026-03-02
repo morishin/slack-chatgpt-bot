@@ -32,6 +32,7 @@ export default SlackFunction(
     const getResponse = await client.apps.datastore.get<
       typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       id: inputs.channelId,
     });
@@ -41,7 +42,7 @@ export default SlackFunction(
       return { error };
     }
 
-    const systemMessage: string | undefined = getResponse.item.systemMessage;
+    const systemMessage: string | undefined = getResponse.item?.systemMessage;
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
@@ -68,6 +69,7 @@ export default SlackFunction(
     const updateResponse = await client.apps.datastore.update<
       typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       item: {
         channelId,

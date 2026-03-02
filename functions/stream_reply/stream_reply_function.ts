@@ -136,6 +136,7 @@ export default SlackFunction(
     const systemMessageResponse = await client.apps.datastore.get<
       typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       id: inputs.channelId,
     });

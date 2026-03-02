@@ -76,6 +76,7 @@ Final state:
 Compatibility strategy:
 - keep datastore name as `MessageHistory` to preserve existing production data
 - use `SystemMessageDatastore` as the code-level name
+- remove legacy `latestMessages` attribute via one-time schema update (`slack run --force` / deploy with force)
 
 ## Error Handling
 
