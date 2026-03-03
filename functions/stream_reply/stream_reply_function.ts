@@ -27,12 +27,6 @@ export const StreamReplyFunctionDefinition = DefineFunction({
       teamId: {
         type: Schema.types.string,
       },
-      messageTs: {
-        type: Schema.types.string,
-      },
-      threadTs: {
-        type: Schema.types.string,
-      },
     },
     required: ["channelId", "message"],
   },
@@ -71,13 +65,7 @@ const isBlank = (text: string): boolean => {
   return text.replaceAll(/\s/g, "").length === 0;
 };
 
-const getSessionKey = (
-  channelId: string,
-  threadTs: string | undefined,
-): string => {
-  if (threadTs) {
-    return `thread:${channelId}:${threadTs}`;
-  }
+const getSessionKey = (channelId: string): string => {
   return `channel:${channelId}`;
 };
 
@@ -155,7 +143,7 @@ export default SlackFunction(
     const timeoutMs = getChainTimeoutMs(
       slackEnv.RESPONSE_CHAIN_TIMEOUT_MINUTES,
     );
-    const sessionKey = getSessionKey(inputs.channelId, inputs.threadTs);
+    const sessionKey = getSessionKey(inputs.channelId);
 
     const sessionResponse = await client.apps.datastore.get<
       typeof ConversationSessionDatastore.definition
@@ -189,7 +177,6 @@ export default SlackFunction(
     };
 
     const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
-    const effectiveThreadTs = inputs.threadTs ?? inputs.messageTs;
     const hasStreamingContext = Boolean(inputs.userId && inputs.teamId);
 
     let reply = "";
@@ -212,7 +199,6 @@ export default SlackFunction(
       await client.chat.postMessage({
         channel: inputs.channelId,
         text: reply,
-        ...(effectiveThreadTs ? { thread_ts: effectiveThreadTs } : {}),
       });
 
       responseId = extractResponseId(
@@ -241,7 +227,6 @@ export default SlackFunction(
             markdown_text: text,
             recipient_team_id: inputs.teamId as string,
             recipient_user_id: inputs.userId as string,
-            ...(effectiveThreadTs ? { thread_ts: effectiveThreadTs } : {}),
           }) as SlackStreamResponse;
 
           if (!startResponse.ok || !startResponse.ts) {
