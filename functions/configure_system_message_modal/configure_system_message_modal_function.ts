@@ -1,6 +1,6 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { env } from "../../env.ts";
-import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
+import { SystemMessageDatastore } from "../../datastores/system_message_datastore.ts";
 
 export const ConfigureSystemMessageModalFunctionDefinition = DefineFunction({
   callback_id: "configure_system_message_modal_function",
@@ -30,8 +30,9 @@ export default SlackFunction(
   ConfigureSystemMessageModalFunctionDefinition,
   async ({ inputs, client }) => {
     const getResponse = await client.apps.datastore.get<
-      typeof MessageHistoryDatastore.definition
+      typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       id: inputs.channelId,
     });
@@ -41,7 +42,7 @@ export default SlackFunction(
       return { error };
     }
 
-    const systemMessage: string | undefined = getResponse.item.systemMessage;
+    const systemMessage: string | undefined = getResponse.item?.systemMessage;
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
@@ -66,8 +67,9 @@ export default SlackFunction(
       .system_message.value as string;
 
     const updateResponse = await client.apps.datastore.update<
-      typeof MessageHistoryDatastore.definition
+      typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       item: {
         channelId,
@@ -81,7 +83,7 @@ export default SlackFunction(
       return { error };
     } else {
       console.log(
-        `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
+        `SystemMessage saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
       );
       return {
         response_action: "update",

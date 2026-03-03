@@ -6,7 +6,7 @@ import {
 } from "npm:@ai-sdk/openai";
 
 import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
-import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
+import { SystemMessageDatastore } from "../../datastores/system_message_datastore.ts";
 import { env } from "../../env.ts";
 
 export const StreamReplyFunctionDefinition = DefineFunction({
@@ -134,8 +134,9 @@ export default SlackFunction(
     }
 
     const systemMessageResponse = await client.apps.datastore.get<
-      typeof MessageHistoryDatastore.definition
+      typeof SystemMessageDatastore.definition
     >({
+      // Keep using the existing production datastore name for backward compatibility.
       datastore: "MessageHistory",
       id: inputs.channelId,
     });

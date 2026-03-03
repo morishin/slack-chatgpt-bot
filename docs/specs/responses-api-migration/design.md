@@ -67,17 +67,16 @@ This avoids cross-thread contamination while keeping channel-level continuity fo
 
 ## Existing Datastore Migration
 
-Current `MessageHistory` datastore currently stores:
-- `latestMessages`
-- `systemMessage`
+Current `MessageHistory` datastore has been simplified to system-message-only storage.
 
-Proposed migration target:
-- keep `systemMessage`
-- stop reading/writing `latestMessages` for prompt construction
+Final state:
+- keep `systemMessage` only
+- remove `latestMessages` attribute and related code
 
-Phase plan:
-- phase 1: stop reading/writing `latestMessages` for prompt construction
-- phase 2: remove `latestMessages` attribute and related code
+Compatibility strategy:
+- keep datastore name as `MessageHistory` to preserve existing production data
+- use `SystemMessageDatastore` as the code-level name
+- remove legacy `latestMessages` attribute via one-time schema update (`slack run --force` / deploy with force)
 
 ## Error Handling
 

@@ -56,5 +56,5 @@ Existing trigger/workflow behavior for mentions and thread replies must remain u
    - default `RESPONSE_CHAIN_TIMEOUT_MINUTES = 30`
    - configured via Slack app environment variable
 3. Migration strategy for message history:
-   - phase 1: stop reading/writing `latestMessages`
-   - phase 2: remove `latestMessages` storage and related code
+   - remove `latestMessages` storage and related code
+   - keep datastore name `MessageHistory` for production data compatibility
