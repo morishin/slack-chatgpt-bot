@@ -7,7 +7,7 @@ No Chat SDK runtime is introduced.
 
 ## Data Flow
 
-1. `ReplyWorkflow` receives mention trigger inputs (`channelId`, `message`, `userId`, `teamId`, `messageTs`, `threadTs`).
+1. `ReplyWorkflow` receives mention trigger inputs (`channelId`, `message`, `userId`, `teamId`).
 2. `PutMessageHistoryFunction` stores user message and returns prompt context.
 3. `StreamReplyFunction`:
    - builds OpenAI messages
@@ -28,7 +28,6 @@ No Chat SDK runtime is introduced.
   - `channel`
   - `recipient_user_id`
   - `recipient_team_id`
-  - optional `thread_ts`
   - first `markdown_text` chunk
 - `chat.appendStream` is called for later chunks.
 - `chat.stopStream` is called once after OpenAI stream completes.
@@ -48,8 +47,6 @@ If required streaming context (`userId` and `teamId`) is missing:
 
 - `{{data.user_id}}`
 - `{{team_id}}`
-- `{{data.message_ts}}`
-- `{{data.thread_ts}}`
 
 `reply_workflow.ts` forwards these fields to `stream_reply_function.ts`.
 

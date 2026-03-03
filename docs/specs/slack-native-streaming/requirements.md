@@ -23,15 +23,13 @@ The request sent to OpenAI must keep the existing behavior:
 ### FR-3: Fallback Path
 When streaming context is insufficient, the function must fall back to a non-streaming completion and post a normal message.
 
-### FR-4: Thread Context Support
-If `threadTs` or `messageTs` is present in trigger/workflow input, the reply should stream in that thread.
+### FR-4: Channel Reply Policy
+Replies should always be posted as channel replies (no thread routing).
 
 ### FR-5: Trigger Input Coverage
 Mention event trigger input mapping must include:
 - `userId`
 - `teamId`
-- `messageTs`
-- `threadTs`
 
 ### FR-6: No New Platform Abstraction Layer
 Implementation must avoid Chat SDK based runtime/adapters for this feature.

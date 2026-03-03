@@ -9,7 +9,6 @@ The current Slack-native streaming output path remains unchanged.
 
 1. Resolve request context:
    - channel id
-   - thread context
    - user/team ids
    - trimmed user message
    - channel system message
@@ -35,12 +34,11 @@ The current Slack-native streaming output path remains unchanged.
 
 ## Session Key Strategy
 
-Use thread-aware keys:
+Use channel-based keys:
 
-- thread messages: `thread:<channelId>:<threadTs>`
-- non-thread mentions: `channel:<channelId>`
+- all mentions: `channel:<channelId>`
 
-This avoids cross-thread contamination while keeping channel-level continuity for top-level conversation.
+This keeps continuity simple and consistent with channel-level replies.
 
 ## OpenAI Request Strategy
 
@@ -86,6 +84,6 @@ Compatibility strategy:
 
 ## Compatibility Notes
 
-- Mention trigger inputs stay unchanged.
+- Mention trigger inputs remain `channelId`, `message`, `userId`, and `teamId`.
 - Reply workflow callback stays unchanged.
 - Output behavior remains streaming in Slack and fallback posting when required context is absent.
