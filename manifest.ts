@@ -1,6 +1,5 @@
 import { Manifest } from "deno-slack-sdk/mod.ts";
 import { env } from "./env.ts";
-import { ConversationSessionDatastore } from "./datastores/conversation_session_datastore.ts";
 import { MessageHistoryDatastore } from "./datastores/message_history_datastore.ts";
 import { MessageType } from "./functions/types/message_type.ts";
 import { ReplyWorkflow } from "./workflows/reply_workflow.ts";
@@ -19,7 +18,7 @@ export default Manifest({
   ],
   types: [MessageType],
   outgoingDomains: ["api.openai.com"],
-  datastores: [MessageHistoryDatastore, ConversationSessionDatastore],
+  datastores: [MessageHistoryDatastore],
   botScopes: [
     "app_mentions:read",
     "chat:write",
