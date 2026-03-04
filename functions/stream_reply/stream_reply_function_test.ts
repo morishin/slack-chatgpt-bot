@@ -4,9 +4,16 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { streamReplyInternals } from "./stream_reply_function.ts";
 
-Deno.test("getSessionKey uses channel scope", () => {
+Deno.test("getSessionKey uses thread scope when threadTs exists", () => {
   assertEquals(
-    streamReplyInternals.getSessionKey("C123"),
+    streamReplyInternals.getSessionKey("C123", "1710000000.000001"),
+    "thread:C123:1710000000.000001",
+  );
+});
+
+Deno.test("getSessionKey uses channel scope when threadTs is missing", () => {
+  assertEquals(
+    streamReplyInternals.getSessionKey("C123", undefined),
     "channel:C123",
   );
 });

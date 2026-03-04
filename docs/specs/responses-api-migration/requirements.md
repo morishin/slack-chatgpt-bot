@@ -32,8 +32,9 @@ Per-channel system message configuration must continue to work and be applied to
 `latestMessages` history from Slack datastore must no longer be required for OpenAI request construction.
 
 ### FR-8: Session Scope Policy
-Session scope must be channel-based:
-- all mentions: keyed by channel (`channel:<channelId>`)
+Session scope must be:
+- thread replies: keyed by thread (`thread:<channelId>:<threadTs>`)
+- non-thread mentions: keyed by channel (`channel:<channelId>`)
 
 ## Non-Functional Requirements
 
@@ -41,7 +42,7 @@ Session scope must be channel-based:
 The implementation must include guardrails for chain growth (timeout reset at minimum), since chained responses still bill prior tokens.
 
 ### NFR-2: Backward Compatibility
-Existing trigger/workflow behavior for mentions must remain unchanged from user perspective.
+Existing trigger/workflow behavior for mentions and thread replies must remain unchanged from user perspective.
 
 ### NFR-3: Type Safety
 `deno check manifest.ts` must pass.
@@ -49,7 +50,8 @@ Existing trigger/workflow behavior for mentions must remain unchanged from user 
 ## Finalized Decisions
 
 1. Session scope key:
-   - all mentions: `channel:<channelId>`
+   - thread replies: `thread:<channelId>:<threadTs>`
+   - non-thread mentions: `channel:<channelId>`
 2. Timeout:
    - default `RESPONSE_CHAIN_TIMEOUT_MINUTES = 30`
    - configured via Slack app environment variable

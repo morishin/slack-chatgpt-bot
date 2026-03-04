@@ -10,6 +10,8 @@ export const ReplyWorkflow = DefineWorkflow({
       message: { type: Schema.types.string },
       userId: { type: Schema.slack.types.user_id },
       teamId: { type: Schema.slack.types.team_id },
+      messageTs: { type: Schema.slack.types.timestamp },
+      threadTs: { type: Schema.slack.types.timestamp },
     },
     required: ["channelId", "message"],
   },
@@ -20,4 +22,6 @@ ReplyWorkflow.addStep(StreamReplyFunctionDefinition, {
   message: ReplyWorkflow.inputs.message,
   userId: ReplyWorkflow.inputs.userId,
   teamId: ReplyWorkflow.inputs.teamId,
+  messageTs: ReplyWorkflow.inputs.messageTs,
+  threadTs: ReplyWorkflow.inputs.threadTs,
 });

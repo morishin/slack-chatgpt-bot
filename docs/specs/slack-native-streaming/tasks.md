@@ -2,7 +2,7 @@
 
 - [x] Add repository-level development rules in `slack-chatgpt-bot/AGENTS.md`
 - [x] Create spec docs under `docs/specs/slack-native-streaming/`
-- [x] Add workflow/trigger inputs (`userId`, `teamId`)
+- [x] Add workflow/trigger inputs (`userId`, `teamId`, `messageTs`, `threadTs`)
 - [x] Replace stream reply implementation with:
   - OpenAI `fetch` streaming
   - Slack native `chat.startStream/appendStream/stopStream`

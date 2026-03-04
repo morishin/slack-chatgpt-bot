@@ -19,8 +19,8 @@ OpenAI request messages must keep existing behavior:
 ### FR-4: Preserve Fallback Behavior
 If streaming context (`userId`, `teamId`) is unavailable, the function must still generate a non-streaming reply and post with `chat.postMessage`.
 
-### FR-5: Preserve Channel Reply Behavior
-Replies must continue to be posted as channel replies.
+### FR-5: Preserve Thread Behavior
+When `threadTs` or `messageTs` exists, replies must be posted in that thread context as currently implemented.
 
 ### FR-6: Maintain Existing Workflow Contract
 Function input/output schema and `ReplyWorkflow` integration must remain compatible with current behavior.
