@@ -1,13 +1,7 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import {
-  generateText,
-  streamText,
-  type ModelMessage,
-} from "npm:ai";
-import { createOpenAI } from "npm:@ai-sdk/openai";
 
 import { env } from "../../env.ts";
-import { MessageType } from "../types/message_type.ts";
+import { Message, MessageType } from "../types/message_type.ts";
 
 export const StreamReplyFunctionDefinition = DefineFunction({
   callback_id: "stream_reply_function",
@@ -16,18 +10,6 @@ export const StreamReplyFunctionDefinition = DefineFunction({
   input_parameters: {
     properties: {
       channelId: {
-        type: Schema.types.string,
-      },
-      userId: {
-        type: Schema.types.string,
-      },
-      teamId: {
-        type: Schema.types.string,
-      },
-      messageTs: {
-        type: Schema.types.string,
-      },
-      threadTs: {
         type: Schema.types.string,
       },
       systemMessage: {
@@ -58,43 +40,17 @@ export const StreamReplyFunctionDefinition = DefineFunction({
   },
 });
 
-type SlackStreamResponse = {
-  ok: boolean;
-  error?: string;
-  ts?: string;
-};
-
-const buildMessages = (
-  systemMessage: string | undefined,
-  latestMessages: { role: string; content: string }[],
-): ModelMessage[] => {
-  return [
-    {
-      role: "system",
-      content: systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
-    },
-    ...latestMessages.map((message) => ({
-      role: message.role as "assistant" | "user",
-      content: message.content,
-    })),
-  ];
-};
-
-const generateNonStreamingReply = async (
-  messages: ModelMessage[],
-  openAIKey: string,
-): Promise<string> => {
-  const openAI = createOpenAI({ apiKey: openAIKey });
-  const { text } = await generateText({
-    model: openAI(env.GPT_MODEL),
-    messages,
-  });
-  return text;
+type State = {
+  currentMessage: string;
+  lastSentMessage: string | null;
+  messageTimestamp: string | null;
+  done: boolean;
 };
 
 export default SlackFunction(
   StreamReplyFunctionDefinition,
   async ({ inputs, client, env: slackEnv }) => {
+    // This and the following functions should be skipped if skip is true
     if (inputs.skip) {
       console.log("Skipping: StreamReplyFunction");
       return {
@@ -105,98 +61,96 @@ export default SlackFunction(
       };
     }
 
-    const messages = buildMessages(inputs.systemMessage, inputs.latestMessages);
+    const messages: { role: string; content: string }[] = [
+      {
+        role: "system",
+        content: inputs.systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
+      },
+      ...inputs.latestMessages,
+    ];
     console.log(
       `Payload to send to ChatGPT API: ${JSON.stringify(messages, null, 2)}`,
     );
 
-    const hasStreamingContext = Boolean(inputs.userId && inputs.teamId);
-    if (!hasStreamingContext) {
-      console.warn(
-        "Streaming context is incomplete. Falling back to non-streaming reply.",
-      );
-      const reply = await generateNonStreamingReply(
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${slackEnv.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: env.GPT_MODEL,
         messages,
-        slackEnv.OPENAI_API_KEY,
-      );
-      await client.chat.postMessage({
-        channel: inputs.channelId,
-        text: reply,
-      });
-      return { outputs: { reply } };
-    }
-
-    const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
-    const streamResult = streamText({
-      model: openAI(env.GPT_MODEL),
-      messages,
+        stream: true,
+      }),
     });
 
-    let reply = "";
-    const effectiveThreadTs = inputs.threadTs ?? inputs.messageTs;
+    const postMessage = async (state: State) => {
+      if (
+        state.currentMessage.length === 0 ||
+        state.currentMessage === state.lastSentMessage
+      ) return;
 
-    let streamTs: string | null = null;
-    let pending = "";
+      const text = state.currentMessage + (state.done ? "↵" : "");
 
-    const flushPending = async () => {
-      if (!pending) return;
-      const text = pending;
-      pending = "";
-
-      if (!streamTs) {
-        const startResponse = await client.apiCall("chat.startStream", {
+      if (state.messageTimestamp === null) {
+        const message = await client.chat.postMessage({
+          text,
           channel: inputs.channelId,
-          markdown_text: text,
-          recipient_team_id: inputs.teamId as string,
-          recipient_user_id: inputs.userId as string,
-          ...(effectiveThreadTs ? { thread_ts: effectiveThreadTs } : {}),
-        }) as SlackStreamResponse;
-
-        if (!startResponse.ok || !startResponse.ts) {
-          throw new Error(
-            `Failed to start Slack stream: ${startResponse.error ?? "unknown error"}`,
-          );
+        });
+        if (!message.ok) {
+          throw new Error("Failed to post message");
         }
-        streamTs = startResponse.ts;
+        state.messageTimestamp = message.ts;
         return;
       }
 
-      const appendResponse = await client.apiCall("chat.appendStream", {
+      await client.chat.update({
+        text,
         channel: inputs.channelId,
-        ts: streamTs,
-        markdown_text: text,
-      }) as SlackStreamResponse;
-      if (!appendResponse.ok) {
-        throw new Error(
-          `Failed to append Slack stream: ${appendResponse.error ?? "unknown error"}`,
-        );
-      }
+        ts: state.messageTimestamp,
+      });
+      state.lastSentMessage = state.currentMessage;
     };
 
-    for await (const content of streamResult.textStream) {
-      if (!content) continue;
+    const state: State = {
+      currentMessage: "",
+      lastSentMessage: null,
+      messageTimestamp: null,
+      done: false,
+    };
+    const intervalId = setInterval(() => postMessage(state), 500);
 
-      reply += content;
-      pending += content;
-      if (pending.length >= 80) {
-        await flushPending();
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Failed to get reader from response");
+    }
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
       }
+      const chunk = decoder.decode(value);
+      chunk.split("\n").filter((line) => line.startsWith("data: ")).forEach(
+        (line) => {
+          const rawMessage = line.replace(/^data: /, "");
+          if (rawMessage === "[DONE]") {
+            state.done = true;
+            return;
+          }
+          const data = JSON.parse(rawMessage);
+          const message = data.choices[0].delta as Partial<Message>;
+          if (message.content) {
+            state.currentMessage += message.content;
+          }
+        },
+      );
     }
 
-    await flushPending();
+    clearInterval(intervalId);
+    await postMessage(state);
 
-    if (streamTs) {
-      const stopResponse = await client.apiCall("chat.stopStream", {
-        channel: inputs.channelId,
-        ts: streamTs,
-      }) as SlackStreamResponse;
-      if (!stopResponse.ok) {
-        throw new Error(
-          `Failed to stop Slack stream: ${stopResponse.error ?? "unknown error"}`,
-        );
-      }
-    }
-
-    return { outputs: { reply } };
+    return { outputs: { reply: state.currentMessage } };
   },
 );

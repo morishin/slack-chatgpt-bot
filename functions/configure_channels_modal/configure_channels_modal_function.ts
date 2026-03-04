@@ -224,18 +224,6 @@ const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
       message: {
         value: "{{data.text}}",
       },
-      userId: {
-        value: "{{data.user_id}}",
-      },
-      teamId: {
-        value: "{{team_id}}",
-      },
-      messageTs: {
-        value: "{{data.message_ts}}",
-      },
-      threadTs: {
-        value: "{{data.thread_ts}}",
-      },
     },
     event: {
       event_type: TriggerEventTypes.AppMentioned,
