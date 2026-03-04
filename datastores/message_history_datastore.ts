@@ -1,12 +1,18 @@
 import { DefineDatastore, Schema } from "deno-slack-sdk/mod.ts";
+import { MessageType } from "../functions/types/message_type.ts";
 
-export const SystemMessageDatastore = DefineDatastore({
-  // Keep the datastore name for backward compatibility with existing production data.
+export const MessageHistoryDatastore = DefineDatastore({
   name: "MessageHistory",
   primary_key: "channelId",
   attributes: {
     channelId: {
       type: Schema.types.string,
+    },
+    latestMessages: {
+      type: Schema.types.array,
+      items: {
+        type: MessageType,
+      },
     },
     systemMessage: {
       type: Schema.types.string,
