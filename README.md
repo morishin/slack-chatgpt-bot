@@ -2,17 +2,22 @@
 
 A ChatGPT Slack Bot.
 
-This is a Slack app using [Slack's next-gen platform](https://api.slack.com/future/intro).
-You'll need a Slack workspace on a _paid plan_ you can work on.
+This is a Slack app using
+[Slack's next-gen platform](https://api.slack.com/future/intro). You'll need a
+Slack workspace on a _paid plan_ you can work on.
 
 ## Features
 
 - You can talk to the bot by adding @mention.
-- The bot keeps and uses a conversation history.
-    - The history size can be specified as `MESSAGE_HISTORY_SIZE` in `env.ts`
-    - Using [Slack Datastores](https://api.slack.com/future/datastores)
+- The bot continues conversation context via OpenAI Responses API
+  (`previous_response_id` chaining).
+  - Chain timeout can be configured in `env.ts`
+    (`RESPONSE_CHAIN_TIMEOUT_MINUTES`)
+- Replies are posted in non-streaming mode via `chat.postMessage`.
 - You can invite the bot to any channel after installing. (via Slack workflow)
-- You can configure a [system message](https://platform.openai.com/docs/guides/chat/introduction) of ChatGPT for each channel. (via Slack workflow)
+- You can configure a
+  [system message](https://platform.openai.com/docs/guides/chat/introduction) of
+  ChatGPT for each channel. (via Slack workflow)
 
 <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
@@ -20,7 +25,8 @@ https://github.com/morishin/slack-chatgpt-bot/assets/1413408/ba7f104f-1049-420f-
 
 ## Usage
 
-Firstly, install this app on your workspace as described in the [Development](#development) section.
+Firstly, install this app on your workspace as described in the
+[Development](#development) section.
 
 ### Invite your bot
 
@@ -30,27 +36,27 @@ Firstly, install this app on your workspace as described in the [Development](#d
 
 1. Click "Start" and select channels where you would like the bot to work.
 
-    <img width="371" src="https://user-images.githubusercontent.com/1413408/226386413-d2f65c07-a0f0-4610-8ace-4698e4219960.png">
+   <img width="371" src="https://user-images.githubusercontent.com/1413408/226386413-d2f65c07-a0f0-4610-8ace-4698e4219960.png">
 
 ### Configure a system message for ChatGPT API
 
 1. Open the configuration dialog via the slash command.
 
-    <img src="https://github.com/morishin/slack-chatgpt-bot/assets/1413408/d25b40ee-e882-4e70-9f80-7d9aa5543256" width="519"/>
+   <img src="https://github.com/morishin/slack-chatgpt-bot/assets/1413408/d25b40ee-e882-4e70-9f80-7d9aa5543256" width="519"/>
 
 1. Click "Start" and input a system message.
 
-    <img width="374" src="https://user-images.githubusercontent.com/1413408/226388870-328e2fa2-8b91-4581-9101-225beb9d6457.png">
+   <img width="374" src="https://user-images.githubusercontent.com/1413408/226388870-328e2fa2-8b91-4581-9101-225beb9d6457.png">
 
 ### Mention your bot
 
 1. Mention your bot in a channel where the bot invited.
 
-    <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
+   <img width="500" src="https://user-images.githubusercontent.com/1413408/227261586-f7ff30e0-cfb9-4a27-a277-3f5dd0e72d80.png">
 
 ## Development
 
-----
+---
 
 **Guide Outline**:
 
@@ -63,7 +69,7 @@ Firstly, install this app on your workspace as described in the [Development](#d
 - [Project Structure](#project-structure)
 - [Resources](#resources)
 
-----
+---
 
 ### Setup
 
@@ -111,8 +117,7 @@ version (denoted by `(dev)`), as well as a deployed version. Triggers created in
 a local environment will only be available to use when running the application
 locally.
 
-To create "Invite ChatGPT bot" trigger, run the following
-command:
+To create "Invite ChatGPT bot" trigger, run the following command:
 
 ```zsh
 $ slack trigger create --trigger-def triggers/configure_channels_trigger.ts
@@ -218,7 +223,10 @@ $ slack trigger create --trigger-def triggers/configure_system_message_trigger.t
    URL: https://slack.com/shortcuts/FtXXXXXXXXXX/0fbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ```
 
-Also [set environment variables](https://api.slack.com/future/run#environment-variables) for the production version of your app. The `.env` will not be used when you run `slack deploy`.
+Also
+[set environment variables](https://api.slack.com/future/run#environment-variables)
+for the production version of your app. The `.env` will not be used when you run
+`slack deploy`.
 
 ```zsh
 $ slack env add
