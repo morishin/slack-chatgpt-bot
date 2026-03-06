@@ -6,7 +6,6 @@ import {
 } from "npm:@ai-sdk/openai";
 
 import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
-import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
 import { env } from "../../env.ts";
 
 export const StreamReplyFunctionDefinition = DefineFunction({
@@ -18,11 +17,11 @@ export const StreamReplyFunctionDefinition = DefineFunction({
       channelId: {
         type: Schema.types.string,
       },
-      message: {
+      systemMessage: {
         type: Schema.types.string,
       },
     },
-    required: ["channelId", "message"],
+    required: ["channelId", "systemMessage"],
   },
   output_parameters: {
     properties: {
@@ -51,10 +50,6 @@ const trimMention = (message: string): string => {
 
 const isBlank = (text: string): boolean => {
   return text.replaceAll(/\s/g, "").length === 0;
-};
-
-const getSessionKey = (channelId: string): string => {
-  return `channel:${channelId}`;
 };
 
 const getChainTimeoutMs = (timeoutMinutes: number): number => {
@@ -86,7 +81,6 @@ const extractResponseId = (
 };
 
 export const streamReplyInternals = {
-  getSessionKey,
   getChainTimeoutMs,
   getPreviousResponseId,
 };
@@ -94,7 +88,7 @@ export const streamReplyInternals = {
 export default SlackFunction(
   StreamReplyFunctionDefinition,
   async ({ inputs, client, env: slackEnv }) => {
-    const content = trimMention(inputs.message);
+    const content = trimMention(inputs.systemMessage);
     if (isBlank(content)) {
       console.log("Skipping: StreamReplyFunction (empty message)");
       return {
@@ -104,31 +98,14 @@ export default SlackFunction(
       };
     }
 
-    const systemMessageResponse = await client.apps.datastore.get<
-      typeof MessageHistoryDatastore.definition
-    >({
-      datastore: "MessageHistory",
-      id: inputs.channelId,
-    });
-    if (!systemMessageResponse.ok) {
-      return {
-        error:
-          `Failed to get system message from datastore: ${systemMessageResponse.error}`,
-      };
-    }
-
-    const systemMessage = systemMessageResponse.item?.systemMessage as
-      | string
-      | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
-
     const timeoutMs = getChainTimeoutMs(env.RESPONSE_CHAIN_TIMEOUT_MINUTES);
-    const sessionKey = getSessionKey(inputs.channelId);
+    const sessionChannelId = inputs.channelId;
 
     const sessionResponse = await client.apps.datastore.get<
       typeof ConversationSessionDatastore.definition
     >({
       datastore: "ConversationSession",
-      id: sessionKey,
+      id: sessionChannelId,
     });
     if (!sessionResponse.ok) {
       return {
@@ -137,6 +114,9 @@ export default SlackFunction(
     }
 
     const nowMs = Date.now();
+    const systemMessage = sessionResponse.item?.systemMessage as
+      | string
+      | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
     const previousResponseId = getPreviousResponseId(
       {
         previousResponseId: sessionResponse.item?.previousResponseId as
@@ -174,7 +154,7 @@ export default SlackFunction(
         }`,
       );
       const reply =
-        "回答生成中にエラーが発生しました。少し時間をおいて再試行してください。";
+        "Failed to generate a response. Please try again in a moment.";
       await client.chat.postMessage({
         channel: inputs.channelId,
         text: reply,
@@ -202,7 +182,8 @@ export default SlackFunction(
       >({
         datastore: "ConversationSession",
         item: {
-          sessionKey,
+          channelId: sessionChannelId,
+          systemMessage,
           previousResponseId: responseId,
           lastInteractionAt: nowMs,
         },

@@ -15,9 +15,10 @@ using `previous_response_id` when a valid previous response exists.
 
 ### FR-2: Session Metadata Persistence
 
-The app must persist only minimal session metadata required for chaining:
+The app must persist session metadata required for chaining:
 
-- session key
+- channel id
+- system message
 - previous response id
 - last interaction timestamp
 
@@ -34,6 +35,8 @@ The bot must post replies via `chat.postMessage` (non-streaming).
 ### FR-5: System Message Preservation
 
 Per-channel system message configuration must continue to work after migration.
+The configured value must be stored in the same datastore as conversation
+session metadata.
 
 ### FR-6: Remove Prompt History Dependency
 
@@ -42,7 +45,7 @@ construction.
 
 ### FR-7: Session Scope
 
-Session key must be channel-based: `channel:<channelId>`.
+Session scope must be channel-based and keyed by `channelId`.
 
 ## Non-Functional Requirements
 

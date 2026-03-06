@@ -2,9 +2,12 @@ import { DefineDatastore, Schema } from "deno-slack-sdk/mod.ts";
 
 export const ConversationSessionDatastore = DefineDatastore({
   name: "ConversationSession",
-  primary_key: "sessionKey",
+  primary_key: "channelId",
   attributes: {
-    sessionKey: {
+    channelId: {
+      type: Schema.types.string,
+    },
+    systemMessage: {
       type: Schema.types.string,
     },
     previousResponseId: {

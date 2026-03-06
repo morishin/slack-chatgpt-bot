@@ -4,13 +4,6 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { streamReplyInternals } from "./stream_reply_function.ts";
 
-Deno.test("getSessionKey uses channel scope", () => {
-  assertEquals(
-    streamReplyInternals.getSessionKey("C123"),
-    "channel:C123",
-  );
-});
-
 Deno.test("getPreviousResponseId returns undefined after timeout", () => {
   const now = 10_000;
   const timeout = 1_000;

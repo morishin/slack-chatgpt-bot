@@ -2,8 +2,7 @@
 
 - [x] Create spec docs for requirements/design/tasks
 - [x] Add `RESPONSE_CHAIN_TIMEOUT_MINUTES` to `env.ts.example`
-- [x] Add `ConversationSession` datastore
-- [x] Simplify `MessageHistory` datastore to system message only
+- [x] Merge datastores into `ConversationSession` and include `systemMessage`
 - [x] Refactor `reply_workflow` to remove `put_message_history` steps
 - [x] Refactor `stream_reply_function` to use AI SDK + Responses API chaining
 - [x] Remove obsolete message history function from manifest/workflow path

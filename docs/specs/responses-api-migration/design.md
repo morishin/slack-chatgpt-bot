@@ -9,8 +9,9 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 1. Receive mention event inputs (`channelId`, `message`).
 2. Trim mention and ignore empty content.
-3. Read per-channel `systemMessage` from `MessageHistory` datastore.
-4. Read conversation session metadata from `ConversationSession` datastore.
+3. Read conversation session record from `ConversationSession` datastore.
+4. Resolve `systemMessage` from datastore (fallback to
+   `env.INITIAL_SYSTEM_MESSAGE`).
 5. Resolve whether to include `previous_response_id` based on timeout.
 6. Call `generateText` with:
    - model: `openAI(env.GPT_MODEL)`
@@ -23,16 +24,10 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 ## Data Model
 
-### Datastore: MessageHistory (existing)
+### Datastore: ConversationSession (single datastore)
 
-- Keep datastore name as `MessageHistory` for production compatibility.
-- Keep only:
-  - `channelId` (primary key)
-  - `systemMessage`
-
-### Datastore: ConversationSession (new)
-
-- `sessionKey` (primary key)
+- `channelId` (primary key)
+- `systemMessage`
 - `previousResponseId`
 - `lastInteractionAt` (unix epoch milliseconds)
 
@@ -58,7 +53,5 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 ## Compatibility Notes
 
-- Keep existing datastore name `MessageHistory` even after removing
-  `latestMessages`.
 - Mention trigger payload can still include extra fields; reply path depends on
   `channelId` and `message`.

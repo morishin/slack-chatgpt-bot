@@ -17,6 +17,6 @@ ReplyWorkflow.addStep(
   StreamReplyFunctionDefinition,
   {
     channelId: ReplyWorkflow.inputs.channelId,
-    message: ReplyWorkflow.inputs.message,
+    systemMessage: ReplyWorkflow.inputs.message,
   },
 );

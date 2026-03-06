@@ -1,6 +1,6 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { env } from "../../env.ts";
-import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
+import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
 
 export const ConfigureSystemMessageModalFunctionDefinition = DefineFunction({
   callback_id: "configure_system_message_modal_function",
@@ -30,9 +30,9 @@ export default SlackFunction(
   ConfigureSystemMessageModalFunctionDefinition,
   async ({ inputs, client }) => {
     const getResponse = await client.apps.datastore.get<
-      typeof MessageHistoryDatastore.definition
+      typeof ConversationSessionDatastore.definition
     >({
-      datastore: "MessageHistory",
+      datastore: "ConversationSession",
       id: inputs.channelId,
     });
 
@@ -65,13 +65,31 @@ export default SlackFunction(
     const systemMessage = view.state.values.system_message_block
       .system_message.value as string;
 
-    const updateResponse = await client.apps.datastore.update<
-      typeof MessageHistoryDatastore.definition
+    const existingResponse = await client.apps.datastore.get<
+      typeof ConversationSessionDatastore.definition
     >({
-      datastore: "MessageHistory",
+      datastore: "ConversationSession",
+      id: channelId,
+    });
+    if (!existingResponse.ok) {
+      const error =
+        `Failed to get a row in datastore: ${existingResponse.error}`;
+      return { error };
+    }
+
+    const updateResponse = await client.apps.datastore.update<
+      typeof ConversationSessionDatastore.definition
+    >({
+      datastore: "ConversationSession",
       item: {
         channelId,
         systemMessage,
+        previousResponseId: existingResponse.item?.previousResponseId as
+          | string
+          | undefined,
+        lastInteractionAt: existingResponse.item?.lastInteractionAt as
+          | number
+          | undefined,
       },
     });
 
@@ -81,7 +99,9 @@ export default SlackFunction(
       return { error };
     } else {
       console.log(
-        `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
+        `ConversationSession saved: ${
+          JSON.stringify(updateResponse.item, null, 2)
+        }`,
       );
       return {
         response_action: "update",
