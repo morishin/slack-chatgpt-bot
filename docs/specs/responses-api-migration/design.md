@@ -9,7 +9,7 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 1. Receive mention event inputs (`channelId`, `message`).
 2. Trim mention and ignore empty content.
-3. Read conversation session record from `ConversationSession` datastore.
+3. Read conversation session record from datastore (`MessageHistory` on Slack).
 4. Resolve `systemMessage` from datastore (fallback to
    `env.INITIAL_SYSTEM_MESSAGE`).
 5. Resolve whether to include `previous_response_id` based on timeout.
@@ -20,16 +20,19 @@ Replace Chat Completions + Slack-stored message history with AI SDK
      - `instructions`: system message
      - optional `previousResponseId`
 7. Post reply to Slack using `chat.postMessage`.
-8. Save latest `responseId` and timestamp to `ConversationSession` datastore.
+8. Save latest `responseId` and timestamp to datastore (`MessageHistory` on
+   Slack).
 
 ## Data Model
 
-### Datastore: ConversationSession (single datastore)
+### Datastore: ConversationSession (single datastore in code)
 
 - `channelId` (primary key)
 - `systemMessage`
 - `previousResponseId`
 - `lastInteractionAt` (unix epoch milliseconds)
+
+Slack datastore name must stay `MessageHistory` for backward compatibility.
 
 ## Workflow Changes
 
@@ -53,5 +56,7 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 ## Compatibility Notes
 
+- Keep Slack datastore name as `MessageHistory` to preserve existing production
+  `systemMessage` values.
 - Mention trigger payload can still include extra fields; reply path depends on
   `channelId` and `message`.

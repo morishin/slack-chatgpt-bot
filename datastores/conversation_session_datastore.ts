@@ -1,7 +1,9 @@
 import { DefineDatastore, Schema } from "deno-slack-sdk/mod.ts";
 
 export const ConversationSessionDatastore = DefineDatastore({
-  name: "ConversationSession",
+  // Keep Slack datastore name as "MessageHistory" for backward compatibility
+  // so existing production systemMessage records are preserved.
+  name: "MessageHistory",
   primary_key: "channelId",
   attributes: {
     channelId: {

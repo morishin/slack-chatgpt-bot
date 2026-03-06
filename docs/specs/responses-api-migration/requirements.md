@@ -52,7 +52,8 @@ Session scope must be channel-based and keyed by `channelId`.
 ### NFR-1: Backward Compatibility
 
 Existing mention trigger/workflow behavior should remain compatible from user
-perspective.
+perspective. Slack datastore name must remain `MessageHistory` so existing
+production `systemMessage` data is preserved.
 
 ### NFR-2: Type Safety
 

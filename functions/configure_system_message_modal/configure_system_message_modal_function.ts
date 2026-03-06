@@ -32,7 +32,7 @@ export default SlackFunction(
     const getResponse = await client.apps.datastore.get<
       typeof ConversationSessionDatastore.definition
     >({
-      datastore: "ConversationSession",
+      datastore: "MessageHistory",
       id: inputs.channelId,
     });
 
@@ -68,7 +68,7 @@ export default SlackFunction(
     const existingResponse = await client.apps.datastore.get<
       typeof ConversationSessionDatastore.definition
     >({
-      datastore: "ConversationSession",
+      datastore: "MessageHistory",
       id: channelId,
     });
     if (!existingResponse.ok) {
@@ -80,7 +80,7 @@ export default SlackFunction(
     const updateResponse = await client.apps.datastore.update<
       typeof ConversationSessionDatastore.definition
     >({
-      datastore: "ConversationSession",
+      datastore: "MessageHistory",
       item: {
         channelId,
         systemMessage,

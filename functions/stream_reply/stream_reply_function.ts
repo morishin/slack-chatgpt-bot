@@ -104,7 +104,7 @@ export default SlackFunction(
     const sessionResponse = await client.apps.datastore.get<
       typeof ConversationSessionDatastore.definition
     >({
-      datastore: "ConversationSession",
+      datastore: "MessageHistory",
       id: sessionChannelId,
     });
     if (!sessionResponse.ok) {
@@ -180,7 +180,7 @@ export default SlackFunction(
       const updateSessionResponse = await client.apps.datastore.update<
         typeof ConversationSessionDatastore.definition
       >({
-        datastore: "ConversationSession",
+        datastore: "MessageHistory",
         item: {
           channelId: sessionChannelId,
           systemMessage,
