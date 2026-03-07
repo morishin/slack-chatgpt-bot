@@ -65,18 +65,6 @@ export default SlackFunction(
     const systemMessage = view.state.values.system_message_block
       .system_message.value as string;
 
-    const existingResponse = await client.apps.datastore.get<
-      typeof ConversationSessionDatastore.definition
-    >({
-      datastore: "MessageHistory",
-      id: channelId,
-    });
-    if (!existingResponse.ok) {
-      const error =
-        `Failed to get a row in datastore: ${existingResponse.error}`;
-      return { error };
-    }
-
     const updateResponse = await client.apps.datastore.update<
       typeof ConversationSessionDatastore.definition
     >({
@@ -84,12 +72,6 @@ export default SlackFunction(
       item: {
         channelId,
         systemMessage,
-        previousResponseId: existingResponse.item?.previousResponseId as
-          | string
-          | undefined,
-        lastInteractionAt: existingResponse.item?.lastInteractionAt as
-          | number
-          | undefined,
       },
     });
 
