@@ -156,6 +156,9 @@ export default SlackFunction(
     const systemMessage = sessionResponse.item?.systemMessage as
       | string
       | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
+    const replyInThread = (sessionResponse.item?.replyInThread as
+      | boolean
+      | undefined) ?? true;
     const previousResponseId = getPreviousResponseId(
       {
         previousResponseId: sessionResponse.item?.previousResponseId as
@@ -176,7 +179,9 @@ export default SlackFunction(
 
     const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
 
-    const runNonStreaming = async (): Promise<{
+    const runNonStreaming = async (
+      options?: { threadTs?: string },
+    ): Promise<{
       reply: string;
       responseId?: string;
     }> => {
@@ -200,6 +205,7 @@ export default SlackFunction(
           "Failed to generate a response. Please try again in a moment.";
         await client.chat.postMessage({
           channel: inputs.channelId,
+          ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
           text: reply,
         });
         return { reply };
@@ -208,6 +214,7 @@ export default SlackFunction(
       const reply = result.text;
       await client.chat.postMessage({
         channel: inputs.channelId,
+        ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
         text: reply,
       });
       return {
@@ -224,7 +231,8 @@ export default SlackFunction(
       inputs.eventTimestamp as number | undefined,
     );
     const canStream = Boolean(
-      streamTeamId && inputs.userId && threadTs,
+      replyInThread &&
+        streamTeamId && inputs.userId && threadTs,
     );
 
     const runStreaming = async (): Promise<{
@@ -329,19 +337,25 @@ export default SlackFunction(
             error instanceof Error ? error.message : String(error)
           }`,
         );
-        const nonStreamingOutcome = await runNonStreaming();
+        const nonStreamingOutcome = await runNonStreaming({
+          threadTs: replyInThread ? threadTs : undefined,
+        });
         reply = nonStreamingOutcome.reply;
         responseId = nonStreamingOutcome.responseId;
       }
     } else {
-      if (!streamTeamId) {
+      if (!replyInThread) {
         console.log(
-          "Streaming disabled: SLACK_TEAM_ID is not configured.",
+          "Streaming disabled: channel is configured for non-thread replies.",
         );
+      } else if (!streamTeamId) {
+        console.log("Streaming disabled: SLACK_TEAM_ID is not configured.");
       } else {
-        console.log("Streaming disabled: userId/eventTimestamp is missing.");
+        console.log("Streaming disabled: userId/messageTs is missing.");
       }
-      const nonStreamingOutcome = await runNonStreaming();
+      const nonStreamingOutcome = await runNonStreaming({
+        threadTs: replyInThread ? threadTs : undefined,
+      });
       reply = nonStreamingOutcome.reply;
       responseId = nonStreamingOutcome.responseId;
     }

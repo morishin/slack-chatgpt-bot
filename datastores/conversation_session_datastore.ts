@@ -18,5 +18,8 @@ export const ConversationSessionDatastore = DefineDatastore({
     lastInteractionAt: {
       type: Schema.types.number,
     },
+    replyInThread: {
+      type: Schema.types.boolean,
+    },
   },
 });

@@ -6,6 +6,7 @@ import {
 import { TriggerEventTypes } from "deno-slack-api/typed-method-types/workflows/triggers/trigger-event-types.ts";
 import { SlackAPIClient } from "deno-slack-api/types.ts";
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
+import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
 import { ReplyWorkflow } from "../../workflows/reply_workflow.ts";
 
 export const ConfigureChannelsModalFunctionDefinition = DefineFunction({
@@ -28,10 +29,21 @@ export default SlackFunction(
     const existingChannelIds = triggers.flatMap((trigger) =>
       trigger.channel_ids
     );
+    let threadReplyChannelIds: string[];
+    try {
+      threadReplyChannelIds = await getThreadReplyChannelIds(
+        client,
+        existingChannelIds,
+      );
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
-      view: buildModalView(existingChannelIds),
+      view: buildModalView(existingChannelIds, threadReplyChannelIds),
     });
     if (!response.ok) {
       return { error: `Failed to open configurator modal: ${response.error}` };
@@ -65,6 +77,14 @@ export default SlackFunction(
     if (inputChannelIds.length === 0) {
       return { error: "Please select at least one channel" };
     }
+    const inputThreadReplyChannelIds = (view.state.values
+      .thread_reply_channels_block?.thread_reply_channel?.selected_channels ??
+      []) as string[];
+    const threadReplyChannelIds = new Set(
+      inputThreadReplyChannelIds.filter((channelId) =>
+        inputChannelIds.includes(channelId)
+      ),
+    );
 
     const singleChannelTriggers = triggers.filter((trigger) =>
       trigger.channel_ids.length === 1
@@ -107,6 +127,33 @@ export default SlackFunction(
       }`,
     );
 
+    const updateDatastoreResponses = await Promise.all(
+      inputChannelIds.map((channelId) =>
+        client.apps.datastore.update<
+          typeof ConversationSessionDatastore.definition
+        >(
+          {
+            datastore: "MessageHistory",
+            item: {
+              channelId,
+              replyInThread: threadReplyChannelIds.has(channelId),
+            },
+          },
+        )
+      ),
+    );
+
+    const failedDatastoreUpdates = updateDatastoreResponses.filter((response) =>
+      !response.ok
+    );
+    if (failedDatastoreUpdates.length > 0) {
+      return {
+        error: `Failed to save channel settings in datastore: ${
+          failedDatastoreUpdates[0].error
+        }`,
+      };
+    }
+
     return {
       response_action: "update",
       view: {
@@ -134,7 +181,10 @@ export default SlackFunction(
   () => ({ outputs: {}, completed: true }),
 );
 
-const buildModalView = (channelIds: string[]) => ({
+const buildModalView = (
+  channelIds: string[],
+  threadReplyChannelIds: string[],
+) => ({
   type: "modal",
   callback_id: "configure_channels_modal_view",
   title: {
@@ -161,6 +211,24 @@ const buildModalView = (channelIds: string[]) => ({
       label: {
         type: "plain_text",
         text: "Channels where ChatGPT bot works",
+      },
+    },
+    {
+      type: "input",
+      block_id: "thread_reply_channels_block",
+      optional: true,
+      element: {
+        type: "multi_channels_select",
+        placeholder: {
+          type: "plain_text",
+          text: "Select channels for thread replies (streaming)",
+        },
+        initial_channels: threadReplyChannelIds,
+        action_id: "thread_reply_channel",
+      },
+      label: {
+        type: "plain_text",
+        text: "Channels using thread replies (streaming)",
       },
     },
   ],
@@ -203,6 +271,36 @@ const createMentionTrigger = async (
 
 const deleteTrigger = (client: SlackAPIClient, triggerId: string) =>
   client.workflows.triggers.delete({ trigger_id: triggerId });
+
+const getThreadReplyChannelIds = async (
+  client: SlackAPIClient,
+  channelIds: string[],
+): Promise<string[]> => {
+  const getResponses = await Promise.all(
+    channelIds.map((channelId) =>
+      client.apps.datastore.get<typeof ConversationSessionDatastore.definition>(
+        {
+          datastore: "MessageHistory",
+          id: channelId,
+        },
+      )
+    ),
+  );
+
+  for (const getResponse of getResponses) {
+    if (!getResponse.ok) {
+      throw new Error(
+        `Failed to get a row in datastore: ${getResponse.error}`,
+      );
+    }
+  }
+
+  return channelIds.filter((channelId, index) => {
+    const item = getResponses[index].item;
+    const replyInThread = item?.replyInThread as boolean | undefined;
+    return replyInThread ?? true;
+  });
+};
 
 const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
   typeof ReplyWorkflow.definition
