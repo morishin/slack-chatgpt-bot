@@ -150,7 +150,7 @@ export default SlackFunction(
       | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
     const replyInThread = (sessionResponse.item?.replyInThread as
       | boolean
-      | undefined) ?? true;
+      | undefined) ?? false;
     const previousResponseId = getPreviousResponseId(
       {
         previousResponseId: sessionResponse.item?.previousResponseId as

@@ -44,7 +44,7 @@ export default SlackFunction(
     const systemMessage: string | undefined = getResponse.item.systemMessage;
     const replyInThread = (getResponse.item.replyInThread as
       | boolean
-      | undefined) ?? true;
+      | undefined) ?? false;
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
@@ -70,7 +70,7 @@ export default SlackFunction(
       .system_message.value as string;
     const replyMode = view.state.values.reply_mode_block.reply_mode
       .selected_option?.value as string | undefined;
-    const replyInThread = replyMode !== "channel";
+    const replyInThread = replyMode === "thread";
 
     const updateResponse = await client.apps.datastore.update<
       typeof ConversationSessionDatastore.definition
