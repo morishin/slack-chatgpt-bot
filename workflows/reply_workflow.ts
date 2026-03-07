@@ -10,7 +10,6 @@ export const ReplyWorkflow = DefineWorkflow({
       message: { type: Schema.types.string },
       userId: { type: Schema.slack.types.user_id },
       messageTs: { type: Schema.slack.types.message_ts },
-      eventTimestamp: { type: Schema.types.number },
     },
     required: ["channelId", "message"],
   },
@@ -23,6 +22,5 @@ ReplyWorkflow.addStep(
     systemMessage: ReplyWorkflow.inputs.message,
     userId: ReplyWorkflow.inputs.userId,
     messageTs: ReplyWorkflow.inputs.messageTs,
-    eventTimestamp: ReplyWorkflow.inputs.eventTimestamp,
   },
 );

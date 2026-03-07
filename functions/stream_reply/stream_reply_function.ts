@@ -26,9 +26,6 @@ export const StreamReplyFunctionDefinition = DefineFunction({
       messageTs: {
         type: Schema.slack.types.message_ts,
       },
-      eventTimestamp: {
-        type: Schema.types.number,
-      },
     },
     required: ["channelId", "systemMessage"],
   },
@@ -97,7 +94,6 @@ const extractResponseId = (
 
 const toThreadTs = (
   messageTs: string | number | undefined,
-  eventTimestamp: number | undefined,
 ): string | undefined => {
   if (typeof messageTs === "string" && /^\d+\.\d+$/.test(messageTs)) {
     return messageTs;
@@ -109,10 +105,6 @@ const toThreadTs = (
     const normalizedSeconds = seconds + Math.trunc(microsValue / 1_000_000);
     const normalizedMicros = microsValue % 1_000_000;
     return `${normalizedSeconds}.${String(normalizedMicros).padStart(6, "0")}`;
-  }
-
-  if (typeof eventTimestamp === "number" && Number.isFinite(eventTimestamp)) {
-    return `${Math.trunc(eventTimestamp)}.000000`;
   }
 
   return undefined;
@@ -228,7 +220,6 @@ export default SlackFunction(
     const streamTeamId = env.SLACK_TEAM_ID?.trim();
     const threadTs = toThreadTs(
       inputs.messageTs as string | number | undefined,
-      inputs.eventTimestamp as number | undefined,
     );
     const canStream = Boolean(
       replyInThread &&

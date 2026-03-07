@@ -2,8 +2,10 @@
   "version": "4",
   "specifiers": {
     "jsr:@slack/api@2.9.0": "2.9.0",
+    "jsr:@std/cli@^1.0.4": "1.0.12",
     "jsr:@std/collections@^1.0.5": "1.0.10",
     "jsr:@std/http@0.206": "0.206.0",
+    "jsr:@std/http@0.206.0": "0.206.0",
     "jsr:@std/jsonc@^1.0.1": "1.0.1",
     "jsr:@std/path@^1.0.3": "1.0.6",
     "npm:@ai-sdk/openai@*": "3.0.37_zod@4.3.6",
@@ -13,8 +15,11 @@
     "@slack/api@2.9.0": {
       "integrity": "839dae672f4ff85a98cef7a5e0508943902ac4c1f74e0d072e954b96882fc4d9",
       "dependencies": [
-        "jsr:@std/http"
+        "jsr:@std/http@0.206"
       ]
+    },
+    "@std/cli@1.0.12": {
+      "integrity": "e5cfb7814d189da174ecd7a34fbbd63f3513e24a1b307feb2fcd5da47a070d90"
     },
     "@std/collections@1.0.10": {
       "integrity": "903af106a3d92970d74e20f7ebff77d9658af9bef4403f1dc42a7801c0575899"
@@ -725,6 +730,9 @@
     "https://deno.land/x/deno_slack_api@2.8.0/typed-method-types/workflows/triggers/trigger-filter.ts": "db0583587e893b9dd4e30e1e413c5b177ac032c9053510bcdbd3d099b23130b6",
     "https://deno.land/x/deno_slack_api@2.8.0/typed-method-types/workflows/triggers/webhook.ts": "eda0d5dffa7bd987d4d1134ba3f96508caaf1675a70049ac89aaa41e77c40007",
     "https://deno.land/x/deno_slack_api@2.8.0/types.ts": "092319fbe26d5e26b7289c3a3efcbf8c5be7f3e69727a0ee09808503f0719026",
+    "https://deno.land/x/deno_slack_api@2.9.3/api-proxy.ts": "652c4e7cb1420b8c865347bcaeb78d3fd2ffd0f8f27215e2053de9176faa4e6f",
+    "https://deno.land/x/deno_slack_api@2.9.3/base-client-helpers.ts": "0946472bffd91296337b75871a57d322de340f51d4dd8cd9331c017c6b892185",
+    "https://deno.land/x/deno_slack_api@2.9.3/base-client.ts": "930e8b5bd17fa883ce872159a3a2f0757efada32fd37658154ef9d42fca3a678",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/admin.ts": "3564a56c3b24ca9e983e6c9e23e27916f975387ad29c820ac5264861b035fa37",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/api.ts": "b6e55651d5361c8014456ce7298577e24cc7f0e5b5778db7aa39b4bc52f6be6e",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/apps.ts": "71a560384acc883de891499dd915209ed8fd99326649f649884c53c5f3fa7d8b",
@@ -756,6 +764,7 @@
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/users.ts": "45ecbeea4cbd1880248aeb027acbe7f6467df084ae4214c0a3b068d99ac13357",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/views.ts": "12ed9848a217b3ca83dd1378414c62a305711c7937635aed2bcc8af8838bcd75",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/workflows.ts": "92a3a8f8bc6a7c121d4a7435eadc02e42a5d8a308709fdfddc5ae3c4fe373045",
+    "https://deno.land/x/deno_slack_api@2.9.3/mod.ts": "bd5e786933654c7b703ad5edb637789cddd7d7f0379ba984713bfb74028f96e3",
     "https://deno.land/x/deno_slack_api@2.9.3/type-helpers.ts": "0b60b05f32096c8e1df045864cdca7bdb58acc68716076cf218dfe09a2677066",
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/apps.ts": "d6c6d96bdfe71d2c909a85ab94c53ee8fce060111ec458e7edbe2f30826755f3",
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/chat.ts": "82eacb46ac73b94f70f133f39b3882ee859340450bc48a0654b6296e96e220a0",
@@ -867,6 +876,7 @@
     "https://deno.land/x/deno_slack_hooks@1.3.0/version.ts": "2def005fb913f1e9ca1b5892eea48a2299cca58df015a296c3730ad81230180a",
     "https://deno.land/x/deno_slack_hooks@1.3.2/check_update.ts": "10b3c2c54a364d060aca5cde8db3fc97c7f805b64c87f106937a35abd423090d",
     "https://deno.land/x/deno_slack_hooks@1.3.2/get_manifest.ts": "1eda87744f65d9bf0b81a0f3b8510657f40e6b2e7549bf843fc097a896c8686e",
+    "https://deno.land/x/deno_slack_hooks@1.3.2/get_trigger.ts": "99b44c6443cb7023096aeb040bfc406c45b573fc314210921f48807778570e7e",
     "https://deno.land/x/deno_slack_hooks@1.3.2/libraries.ts": "df443297214ce9618ef6b50fc1ccc9d2c969652850067adb6485b9e14649d812",
     "https://deno.land/x/deno_slack_hooks@1.3.2/utilities.ts": "536c5fb3551bb0b796534375ba3becf82c5e1aaa775daf747fd077b1f503d930",
     "https://deno.land/x/deno_slack_hooks@1.3.2/version.ts": "9fe3f11105d3839a8312f2acbb8886072cc7e365a34136446cfc59b994a6722e",
@@ -1795,5 +1805,10 @@
     "https://qkmhap62qwfaasqzew54nnbu7ar42u43y356rpojsrtm2ravz4uq.arweave.net/gphwP9qFigBKGSW7xrQ0-CPNU5vG--i9yZRmzUQVzyk/src/subtract/deno.ts": "6d81f96b21a66db7f38fb8a0df2245d9c09ac5acca634be873b993dae5128244",
     "https://qkmhap62qwfaasqzew54nnbu7ar42u43y356rpojsrtm2ravz4uq.arweave.net/gphwP9qFigBKGSW7xrQ0-CPNU5vG--i9yZRmzUQVzyk/src/types/deno.ts": "4aad6c7484e93f6275405bdcc40ba3d4cea5ab315169a30658683fd26b5f5326",
     "https://qkmhap62qwfaasqzew54nnbu7ar42u43y356rpojsrtm2ravz4uq.arweave.net/gphwP9qFigBKGSW7xrQ0-CPNU5vG--i9yZRmzUQVzyk/src/utils/deno.ts": "e3e9695a01f7d2cd6ebacaac9110b2def54f1920483a900d644841fe658ee9c4"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@std/http@0.206.0"
+    ]
   }
 }
