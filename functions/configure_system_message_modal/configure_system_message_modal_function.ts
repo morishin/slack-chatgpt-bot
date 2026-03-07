@@ -186,14 +186,14 @@ const buildModalView = (
           {
             text: {
               type: "plain_text",
-              text: "Thread reply (streaming)",
+              text: "Thread reply",
             },
             value: "thread",
           },
           {
             text: {
               type: "plain_text",
-              text: "Channel reply (non-streaming)",
+              text: "Channel reply",
             },
             value: "channel",
           },
@@ -201,9 +201,7 @@ const buildModalView = (
         initial_option: {
           text: {
             type: "plain_text",
-            text: replyInThread
-              ? "Thread reply (streaming)"
-              : "Channel reply (non-streaming)",
+            text: replyInThread ? "Thread reply" : "Channel reply",
           },
           value: replyInThread ? "thread" : "channel",
         },

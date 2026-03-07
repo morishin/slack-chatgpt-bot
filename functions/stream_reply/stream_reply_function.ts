@@ -51,6 +51,12 @@ type SlackStreamResponse = {
   ts?: string;
 };
 
+type SlackMessageResponse = {
+  ok: boolean;
+  error?: string;
+  ts?: string;
+};
+
 type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
@@ -110,10 +116,22 @@ const toThreadTs = (
   return undefined;
 };
 
+const CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS = 160;
+const CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS = 800;
+
+const shouldFlushChannelPseudoStream = (
+  pendingChars: number,
+  elapsedMs: number,
+): boolean => {
+  return pendingChars >= CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS ||
+    elapsedMs >= CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS;
+};
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
   toThreadTs,
+  shouldFlushChannelPseudoStream,
 };
 
 export default SlackFunction(
@@ -314,6 +332,112 @@ export default SlackFunction(
       };
     };
 
+    const runChannelPseudoStreaming = async (): Promise<{
+      reply: string;
+      responseId?: string;
+    }> => {
+      console.log("Slack reply mode: pseudo-streaming in channel");
+      const streamResult = streamText({
+        model: openAI(env.GPT_MODEL),
+        prompt: content,
+        providerOptions: {
+          openai: openAIOptions,
+        },
+      });
+
+      let reply = "";
+      let messageTs: string | undefined;
+      let pendingChars = 0;
+      let lastUpdateAt = Date.now();
+
+      const fallbackReply =
+        "Failed to generate a response. Please try again in a moment.";
+
+      const postInitialMessage = async (text: string): Promise<string> => {
+        const postResponse = await client.chat.postMessage({
+          channel: inputs.channelId,
+          text,
+        }) as SlackMessageResponse;
+        if (!postResponse.ok || !postResponse.ts) {
+          throw new Error(
+            `Failed to post pseudo-stream message: ${
+              postResponse.error ?? "unknown_error"
+            }`,
+          );
+        }
+        return postResponse.ts;
+      };
+
+      const updateMessage = async (ts: string, text: string): Promise<void> => {
+        const updateResponse = await client.chat.update({
+          channel: inputs.channelId,
+          ts,
+          text,
+        }) as SlackMessageResponse;
+        if (!updateResponse.ok) {
+          throw new Error(
+            `Failed to update pseudo-stream message: ${
+              updateResponse.error ?? "unknown_error"
+            }`,
+          );
+        }
+      };
+
+      try {
+        for await (const chunk of streamResult.textStream) {
+          reply += chunk;
+          if (!messageTs) {
+            messageTs = await postInitialMessage(reply);
+            lastUpdateAt = Date.now();
+            continue;
+          }
+
+          pendingChars += chunk.length;
+          const now = Date.now();
+          const elapsedMs = now - lastUpdateAt;
+          if (!shouldFlushChannelPseudoStream(pendingChars, elapsedMs)) {
+            continue;
+          }
+
+          await updateMessage(messageTs, reply);
+          pendingChars = 0;
+          lastUpdateAt = now;
+        }
+
+        if (!messageTs) {
+          throw new Error("No stream output produced.");
+        }
+
+        if (pendingChars > 0) {
+          await updateMessage(messageTs, reply);
+        }
+
+        const providerMetadata = await streamResult.providerMetadata;
+        return {
+          reply,
+          responseId: extractResponseId(
+            providerMetadata as OpenAIProviderMetadata | undefined,
+          ),
+        };
+      } catch (error) {
+        console.warn(
+          `Pseudo-streaming mode failed. Falling back to static message. Error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        try {
+          if (messageTs) {
+            await updateMessage(messageTs, fallbackReply);
+          } else {
+            await postInitialMessage(fallbackReply);
+          }
+        } catch (_fallbackSlackError) {
+          // Ignore fallback posting errors and return a safe reply string.
+        }
+        return { reply: fallbackReply };
+      }
+    };
+
     let reply: string;
     let responseId: string | undefined;
 
@@ -334,12 +458,12 @@ export default SlackFunction(
         reply = nonStreamingOutcome.reply;
         responseId = nonStreamingOutcome.responseId;
       }
+    } else if (!replyInThread) {
+      const pseudoStreamingOutcome = await runChannelPseudoStreaming();
+      reply = pseudoStreamingOutcome.reply;
+      responseId = pseudoStreamingOutcome.responseId;
     } else {
-      if (!replyInThread) {
-        console.log(
-          "Streaming disabled: channel is configured for non-thread replies.",
-        );
-      } else if (!streamTeamId) {
+      if (!streamTeamId) {
         console.log("Streaming disabled: SLACK_TEAM_ID is not configured.");
       } else {
         console.log("Streaming disabled: userId/messageTs is missing.");

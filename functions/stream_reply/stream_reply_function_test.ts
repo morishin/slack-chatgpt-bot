@@ -50,3 +50,11 @@ Deno.test("toThreadTs accepts message ts string", () => {
   const threadTs = streamReplyInternals.toThreadTs("1772877958.777800");
   assertEquals(threadTs, "1772877958.777800");
 });
+
+Deno.test("shouldFlushChannelPseudoStream returns true on pending size", () => {
+  assert(streamReplyInternals.shouldFlushChannelPseudoStream(160, 0));
+});
+
+Deno.test("shouldFlushChannelPseudoStream returns true on elapsed time", () => {
+  assert(streamReplyInternals.shouldFlushChannelPseudoStream(1, 800));
+});
