@@ -1,5 +1,5 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { generateText } from "npm:ai";
+import { generateText, streamText } from "npm:ai";
 import {
   createOpenAI,
   type OpenAILanguageModelResponsesOptions,
@@ -20,6 +20,15 @@ export const StreamReplyFunctionDefinition = DefineFunction({
       systemMessage: {
         type: Schema.types.string,
       },
+      userId: {
+        type: Schema.types.string,
+      },
+      messageTs: {
+        type: Schema.slack.types.message_ts,
+      },
+      eventTimestamp: {
+        type: Schema.types.number,
+      },
     },
     required: ["channelId", "systemMessage"],
   },
@@ -37,6 +46,12 @@ type OpenAIProviderMetadata = {
   openai?: {
     responseId?: string | null;
   };
+};
+
+type SlackStreamResponse = {
+  ok: boolean;
+  error?: string;
+  ts?: string;
 };
 
 type ConversationSession = {
@@ -80,9 +95,33 @@ const extractResponseId = (
     : undefined;
 };
 
+const toThreadTs = (
+  messageTs: string | number | undefined,
+  eventTimestamp: number | undefined,
+): string | undefined => {
+  if (typeof messageTs === "string" && /^\d+\.\d+$/.test(messageTs)) {
+    return messageTs;
+  }
+
+  if (typeof messageTs === "number" && Number.isFinite(messageTs)) {
+    const seconds = Math.trunc(messageTs);
+    const microsValue = Math.round((messageTs - seconds) * 1_000_000);
+    const normalizedSeconds = seconds + Math.trunc(microsValue / 1_000_000);
+    const normalizedMicros = microsValue % 1_000_000;
+    return `${normalizedSeconds}.${String(normalizedMicros).padStart(6, "0")}`;
+  }
+
+  if (typeof eventTimestamp === "number" && Number.isFinite(eventTimestamp)) {
+    return `${Math.trunc(eventTimestamp)}.000000`;
+  }
+
+  return undefined;
+};
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
+  toThreadTs,
 };
 
 export default SlackFunction(
@@ -136,29 +175,178 @@ export default SlackFunction(
     };
 
     const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
-    console.log("Slack reply mode: non-streaming");
 
-    let result;
-    try {
-      result = await generateText({
+    const runNonStreaming = async (): Promise<{
+      reply: string;
+      responseId?: string;
+    }> => {
+      console.log("Slack reply mode: non-streaming");
+      let result;
+      try {
+        result = await generateText({
+          model: openAI(env.GPT_MODEL),
+          prompt: content,
+          providerOptions: {
+            openai: openAIOptions,
+          },
+        });
+      } catch (error) {
+        console.warn(
+          `OpenAI reply request failed. Falling back to static message. Error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        const reply =
+          "Failed to generate a response. Please try again in a moment.";
+        await client.chat.postMessage({
+          channel: inputs.channelId,
+          text: reply,
+        });
+        return { reply };
+      }
+
+      const reply = result.text;
+      await client.chat.postMessage({
+        channel: inputs.channelId,
+        text: reply,
+      });
+      return {
+        reply,
+        responseId: extractResponseId(
+          result.providerMetadata as OpenAIProviderMetadata | undefined,
+        ),
+      };
+    };
+
+    const streamTeamId = env.SLACK_TEAM_ID?.trim();
+    const threadTs = toThreadTs(
+      inputs.messageTs as string | number | undefined,
+      inputs.eventTimestamp as number | undefined,
+    );
+    const canStream = Boolean(
+      streamTeamId && inputs.userId && threadTs,
+    );
+
+    const runStreaming = async (): Promise<{
+      reply: string;
+      responseId?: string;
+    }> => {
+      console.log("Slack reply mode: streaming");
+      const streamResult = streamText({
         model: openAI(env.GPT_MODEL),
         prompt: content,
         providerOptions: {
           openai: openAIOptions,
         },
       });
-    } catch (error) {
-      console.warn(
-        `OpenAI reply request failed. Falling back to static message. Error: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      const reply =
-        "Failed to generate a response. Please try again in a moment.";
-      await client.chat.postMessage({
+
+      let reply = "";
+      let streamTs: string | undefined;
+      let pending = "";
+
+      const appendStream = async () => {
+        if (!streamTs || pending.length === 0) return;
+        const text = pending;
+        pending = "";
+        const appendResponse = await client.apiCall("chat.appendStream", {
+          channel: inputs.channelId,
+          ts: streamTs,
+          markdown_text: text,
+        }) as SlackStreamResponse;
+        if (!appendResponse.ok) {
+          throw new Error(
+            `Failed to append Slack stream: ${
+              appendResponse.error ?? "unknown_error"
+            }`,
+          );
+        }
+      };
+
+      for await (const chunk of streamResult.textStream) {
+        reply += chunk;
+        if (!streamTs) {
+          const startResponse = await client.apiCall("chat.startStream", {
+            channel: inputs.channelId,
+            thread_ts: threadTs as string,
+            recipient_user_id: inputs.userId as string,
+            recipient_team_id: streamTeamId as string,
+            markdown_text: chunk,
+          }) as SlackStreamResponse;
+          if (!startResponse.ok || !startResponse.ts) {
+            throw new Error(
+              `Failed to start Slack stream: ${
+                startResponse.error ?? "unknown_error"
+              }`,
+            );
+          }
+          streamTs = startResponse.ts;
+          continue;
+        }
+
+        pending += chunk;
+        if (pending.length >= 160) {
+          await appendStream();
+        }
+      }
+
+      if (!streamTs) {
+        throw new Error("No stream output produced.");
+      }
+
+      await appendStream();
+      const stopResponse = await client.apiCall("chat.stopStream", {
         channel: inputs.channelId,
-        text: reply,
-      });
+        ts: streamTs,
+      }) as SlackStreamResponse;
+      if (!stopResponse.ok) {
+        throw new Error(
+          `Failed to stop Slack stream: ${
+            stopResponse.error ?? "unknown_error"
+          }`,
+        );
+      }
+
+      const providerMetadata = await streamResult.providerMetadata;
+      return {
+        reply,
+        responseId: extractResponseId(
+          providerMetadata as OpenAIProviderMetadata | undefined,
+        ),
+      };
+    };
+
+    let reply: string;
+    let responseId: string | undefined;
+
+    if (canStream) {
+      try {
+        const streamOutcome = await runStreaming();
+        reply = streamOutcome.reply;
+        responseId = streamOutcome.responseId;
+      } catch (error) {
+        console.warn(
+          `Streaming mode failed. Falling back to non-streaming mode. Error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        const nonStreamingOutcome = await runNonStreaming();
+        reply = nonStreamingOutcome.reply;
+        responseId = nonStreamingOutcome.responseId;
+      }
+    } else {
+      if (!streamTeamId) {
+        console.log(
+          "Streaming disabled: SLACK_TEAM_ID is not configured.",
+        );
+      } else {
+        console.log("Streaming disabled: userId/eventTimestamp is missing.");
+      }
+      const nonStreamingOutcome = await runNonStreaming();
+      reply = nonStreamingOutcome.reply;
+      responseId = nonStreamingOutcome.responseId;
+    }
+
+    if (!responseId) {
       return {
         outputs: {
           reply,
@@ -166,39 +354,23 @@ export default SlackFunction(
       };
     }
 
-    const reply = result.text;
-    await client.chat.postMessage({
-      channel: inputs.channelId,
-      text: reply,
+    const updateSessionResponse = await client.apps.datastore.update<
+      typeof ConversationSessionDatastore.definition
+    >({
+      datastore: "MessageHistory",
+      item: {
+        channelId: sessionChannelId,
+        systemMessage,
+        previousResponseId: responseId,
+        lastInteractionAt: nowMs,
+      },
     });
 
-    const responseId = extractResponseId(
-      result.providerMetadata as OpenAIProviderMetadata | undefined,
-    );
-
-    if (responseId) {
-      const updateSessionResponse = await client.apps.datastore.update<
-        typeof ConversationSessionDatastore.definition
-      >({
-        datastore: "MessageHistory",
-        item: {
-          channelId: sessionChannelId,
-          systemMessage,
-          previousResponseId: responseId,
-          lastInteractionAt: nowMs,
-        },
-      });
-
-      if (!updateSessionResponse.ok) {
-        return {
-          error:
-            `Failed to save conversation session: ${updateSessionResponse.error}`,
-        };
-      }
-    } else {
-      console.warn(
-        "OpenAI responseId is missing; session chain was not updated.",
-      );
+    if (!updateSessionResponse.ok) {
+      return {
+        error:
+          `Failed to save conversation session: ${updateSessionResponse.error}`,
+      };
     }
 
     return {

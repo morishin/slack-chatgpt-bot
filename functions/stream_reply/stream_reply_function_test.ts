@@ -40,3 +40,27 @@ Deno.test("getChainTimeoutMs converts minutes to milliseconds", () => {
   const timeoutMs = streamReplyInternals.getChainTimeoutMs(30);
   assertEquals(timeoutMs, 30 * 60 * 1000);
 });
+
+Deno.test("toThreadTs normalizes messageTs to 6-digit micros", () => {
+  const threadTs = streamReplyInternals.toThreadTs(
+    1_772_877_886.3396,
+    undefined,
+  );
+  assertEquals(threadTs, "1772877886.339600");
+});
+
+Deno.test("toThreadTs falls back to eventTimestamp seconds", () => {
+  const threadTs = streamReplyInternals.toThreadTs(
+    undefined,
+    1_772_877_886,
+  );
+  assertEquals(threadTs, "1772877886.000000");
+});
+
+Deno.test("toThreadTs accepts message ts string", () => {
+  const threadTs = streamReplyInternals.toThreadTs(
+    "1772877958.777800",
+    undefined,
+  );
+  assertEquals(threadTs, "1772877958.777800");
+});
