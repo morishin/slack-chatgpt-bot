@@ -24,10 +24,12 @@ export const ConfigureChannelsModalFunctionDefinition = DefineFunction({
 export default SlackFunction(
   ConfigureChannelsModalFunctionDefinition,
   async ({ inputs, client }) => {
-    const triggers = await findMentionTriggers(client);
-    const existingChannelIds = triggers.flatMap((trigger) =>
-      trigger.channel_ids
-    );
+    const triggers = await findReplyWorkflowEventTriggers(client);
+    const existingChannelIds = [
+      ...new Set(
+        triggers.flatMap((trigger) => trigger.channel_ids),
+      ),
+    ];
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
@@ -43,22 +45,7 @@ export default SlackFunction(
 ).addViewSubmissionHandler(
   ["configure_channels_modal_view"],
   async ({ view, client }) => {
-    const triggers = await findMentionTriggers(client);
-
-    const obsoleteTriggers = triggers.filter((trigger) =>
-      trigger.channel_ids.length > 1
-    );
-    if (obsoleteTriggers.length > 0) {
-      console.log(`${obsoleteTriggers.length} obsolete triggers found`);
-      await Promise.all(
-        obsoleteTriggers.map((trigger) => deleteTrigger(client, trigger.id)),
-      );
-      console.log(
-        `💥 Obsolete triggers removed: ${
-          JSON.stringify(obsoleteTriggers.map((trigger) => trigger.id))
-        }`,
-      );
-    }
+    const triggers = await findReplyWorkflowEventTriggers(client);
 
     const inputChannelIds = view.state.values.channels_block.channel
       .selected_channels as string[];
@@ -66,20 +53,16 @@ export default SlackFunction(
       return { error: "Please select at least one channel" };
     }
 
-    const singleChannelTriggers = triggers.filter((trigger) =>
-      trigger.channel_ids.length === 1
-    );
-    if (singleChannelTriggers.length > 0) {
+    if (triggers.length > 0) {
       await Promise.all(
-        singleChannelTriggers.map((trigger) =>
-          deleteTrigger(client, trigger.id)
-        ),
+        triggers.map((trigger) => deleteTrigger(client, trigger.id)),
       );
       console.log(
-        `💥 Triggers removed: ${
+        `💥 Existing reply triggers removed: ${
           JSON.stringify(
-            singleChannelTriggers.map((trigger) => ({
+            triggers.map((trigger) => ({
               id: trigger.id,
+              event_type: trigger.event_type,
               channel_ids: trigger.channel_ids,
             })),
             null,
@@ -91,15 +74,25 @@ export default SlackFunction(
 
     const createResponse = await Promise.all(
       inputChannelIds.map((channelId) =>
-        createMentionTrigger(client, channelId)
+        createReplyTriggers(client, channelId)
       ),
     );
+    const createErrors = createResponse.filter((res) => res.error);
+    if (createErrors.length > 0) {
+      return {
+        error: `Failed to create triggers for all channels: ${
+          createErrors[0].error
+        }`,
+      };
+    }
+
     console.log(
       `✅ New triggers created: ${
         JSON.stringify(
-          createResponse.map((res) => ({
-            id: res.trigger?.id,
-            channel_ids: res.trigger?.channel_ids,
+          createResponse.flatMap((res) => res.triggers).map((trigger) => ({
+            id: trigger?.id,
+            event_type: trigger?.event_type,
+            channel_ids: trigger?.channel_ids,
           })),
           null,
           2,
@@ -166,7 +159,7 @@ const buildModalView = (channelIds: string[]) => ({
   ],
 });
 
-const findMentionTriggers = async (client: SlackAPIClient): Promise<
+const findReplyWorkflowEventTriggers = async (client: SlackAPIClient): Promise<
   EventTriggerResponseObject<typeof ReplyWorkflow.definition>[]
 > => {
   const allTriggers = await client.workflows.triggers.list({ is_owner: true });
@@ -174,31 +167,60 @@ const findMentionTriggers = async (client: SlackAPIClient): Promise<
     throw new Error("Failed to fetch triggers list");
   }
 
-  // Find app_mention event triggers to update
+  // Find reply workflow event triggers to update.
   const existingTriggers = allTriggers.triggers.filter((trigger) =>
     trigger.workflow.callback_id ===
       ReplyWorkflow.definition.callback_id &&
-    trigger.event_type === TriggerEventTypes.AppMentioned
+    (trigger.event_type === TriggerEventTypes.AppMentioned ||
+      trigger.event_type === TriggerEventTypes.MessagePosted)
   ) as EventTriggerResponseObject<typeof ReplyWorkflow.definition>[];
 
   return existingTriggers;
 };
 
-const createMentionTrigger = async (
+const createReplyTriggers = async (
   client: SlackAPIClient,
   channelId: string,
 ): Promise<{
+  error?: string;
+  triggers: EventTriggerResponseObject<typeof ReplyWorkflow.definition>[];
+}> => {
+  const mention = await createReplyTrigger(
+    client,
+    makeMentionTriggerConfig(channelId),
+  );
+  if (!mention.ok || !mention.trigger) {
+    return { error: mention.error, triggers: [] };
+  }
+
+  const threadFollowup = await createReplyTrigger(
+    client,
+    makeThreadFollowupTriggerConfig(channelId),
+  );
+  if (!threadFollowup.ok || !threadFollowup.trigger) {
+    await deleteTrigger(client, mention.trigger.id);
+    return { error: threadFollowup.error, triggers: [] };
+  }
+
+  return { triggers: [mention.trigger, threadFollowup.trigger] };
+};
+
+const createReplyTrigger = async (
+  client: SlackAPIClient,
+  config: ValidTriggerTypes<typeof ReplyWorkflow.definition>,
+): Promise<{
+  ok: boolean;
   error?: string;
   trigger?: EventTriggerResponseObject<typeof ReplyWorkflow.definition>;
 }> => {
   const createTriggerResponse = await client.workflows.triggers.create<
     typeof ReplyWorkflow.definition
-  >(makeMentionTriggerConfig(channelId));
+  >(config);
   if (!createTriggerResponse.ok) {
-    return { error: createTriggerResponse.error };
+    return { ok: false, error: createTriggerResponse.error };
   }
 
-  return { trigger: createTriggerResponse.trigger };
+  return { ok: true, trigger: createTriggerResponse.trigger };
 };
 
 const deleteTrigger = (client: SlackAPIClient, triggerId: string) =>
@@ -224,10 +246,71 @@ const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
       messageTs: {
         value: TriggerContextData.Event.AppMentioned.message_ts,
       },
+      eventType: {
+        value: TriggerContextData.Event.AppMentioned.event_type,
+      },
     },
     event: {
       event_type: TriggerEventTypes.AppMentioned,
       channel_ids: [channelId],
+    },
+  }
+);
+
+const makeThreadFollowupTriggerConfig = (
+  channelId: string,
+): ValidTriggerTypes<
+  typeof ReplyWorkflow.definition
+> => (
+  {
+    type: "event",
+    name: "thread follow-up trigger",
+    workflow: `#/workflows/${ReplyWorkflow.definition.callback_id}`,
+    inputs: {
+      channelId: {
+        value: TriggerContextData.Event.MessagePosted.channel_id,
+      },
+      message: {
+        value: TriggerContextData.Event.MessagePosted.text,
+      },
+      userId: {
+        value: TriggerContextData.Event.MessagePosted.user_id,
+      },
+      // Use parent ts so replies stay in the same thread.
+      messageTs: {
+        value: TriggerContextData.Event.MessagePosted.thread_ts,
+      },
+      eventType: {
+        value: TriggerContextData.Event.MessagePosted.event_type,
+      },
+    },
+    event: {
+      event_type: TriggerEventTypes.MessagePosted,
+      channel_ids: [channelId],
+      filter: {
+        version: 1,
+        root: {
+          operator: "AND",
+          inputs: [
+            {
+              operator: "NOT",
+              inputs: [
+                {
+                  statement: "{{data.thread_ts}} == null",
+                },
+              ],
+            },
+            {
+              operator: "NOT",
+              inputs: [
+                {
+                  statement: "{{data.user_id}} == null",
+                },
+              ],
+            },
+          ],
+        },
+      },
     },
   }
 );

@@ -19,10 +19,12 @@ export default Manifest({
   datastores: [ConversationSessionDatastore],
   botScopes: [
     "app_mentions:read",
+    "channels:history",
     "chat:write",
     "chat:write.public",
     "datastore:read",
     "datastore:write",
+    "groups:history",
     "triggers:read",
     "triggers:write",
   ],
