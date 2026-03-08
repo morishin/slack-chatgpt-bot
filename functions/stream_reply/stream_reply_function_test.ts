@@ -90,3 +90,44 @@ Deno.test("hasAnyMentionToken detects mention token", () => {
   );
   assertEquals(streamReplyInternals.hasAnyMentionToken("hello"), false);
 });
+
+Deno.test("extractResponseText reads output_text field", () => {
+  const text = streamReplyInternals.extractResponseText({
+    output_text: "hello from output_text",
+  });
+  assertEquals(text, "hello from output_text");
+});
+
+Deno.test("extractResponseText reads message content output_text", () => {
+  const text = streamReplyInternals.extractResponseText({
+    output: [
+      {
+        type: "message",
+        content: [
+          { type: "output_text", text: "hello " },
+          { type: "output_text", text: "world" },
+        ],
+      },
+    ],
+  });
+  assertEquals(text, "hello world");
+});
+
+Deno.test("buildOpenAIResponsesRequestBody includes previous_response_id", () => {
+  const body = streamReplyInternals.buildOpenAIResponsesRequestBody(
+    {
+      apiKey: "dummy",
+      model: "gpt-5-nano",
+      prompt: "hello",
+      instructions: "You are helpful.",
+      previousResponseId: "resp_123",
+    },
+    true,
+  );
+
+  assertEquals(body["model"], "gpt-5-nano");
+  assertEquals(body["input"], "hello");
+  assertEquals(body["instructions"], "You are helpful.");
+  assertEquals(body["previous_response_id"], "resp_123");
+  assertEquals(body["stream"], true);
+});
