@@ -2,8 +2,8 @@
 
 ## Overview
 
-Replace Chat Completions + Slack-stored message history with AI SDK
-`generateText` using OpenAI Responses API conversation chaining.
+Replace Chat Completions + Slack-stored message history with direct OpenAI
+Responses API calls (`fetch`) using conversation chaining.
 
 ## High-Level Flow
 
@@ -16,12 +16,12 @@ Replace Chat Completions + Slack-stored message history with AI SDK
    - always process `app_mentioned`
    - process `message_posted` only when `replyInThread=true`
 6. Resolve whether to include `previous_response_id` based on timeout.
-7. Call `generateText` / `streamText` with:
-   - model: `openAI(env.GPT_MODEL)`
-   - prompt: current user message
-   - provider options:
-     - `instructions`: system message
-     - optional `previousResponseId`
+7. Call OpenAI `POST /v1/responses` with:
+   - `model`: `env.GPT_MODEL`
+   - `input`: current user message
+   - `instructions`: system message
+   - optional `previous_response_id`
+   - `stream: true` when streaming/pseudo-streaming path is used
 8. Post reply to Slack:
    - thread mode: Slack stream APIs
    - channel mode: pseudo-stream (`chat.postMessage` + `chat.update`)
@@ -60,7 +60,7 @@ channel:
 ### Stream reply function
 
 - Keep callback id (`stream_reply_function`) for compatibility.
-- Use AI SDK with Responses API chaining.
+- Use direct OpenAI Responses API calls (no AI SDK dependency).
 - Enforce event-type gate:
   - ignore `message_posted` when channel is not in thread-reply mode
 - Thread mode uses Slack stream APIs.

@@ -1,5 +1,4 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { generateText, streamText } from "npm:ai";
 
 import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
 import { env } from "../../env.ts";
@@ -38,12 +37,6 @@ export const StreamReplyFunctionDefinition = DefineFunction({
   },
 });
 
-type OpenAIProviderMetadata = {
-  openai?: {
-    responseId?: string | null;
-  };
-};
-
 type SlackStreamResponse = {
   ok: boolean;
   error?: string;
@@ -60,6 +53,18 @@ type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
 };
+
+type OpenAIResponsesApiResponse = Record<string, unknown>;
+
+type OpenAIResponsesRequestInput = {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  instructions: string;
+  previousResponseId?: string;
+};
+
+const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses";
 
 class StreamingReplyError extends Error {
   streamStarted: boolean;
@@ -103,13 +108,219 @@ const getPreviousResponseId = (
   return session.previousResponseId;
 };
 
-const extractResponseId = (
-  providerMetadata: OpenAIProviderMetadata | undefined,
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const getStringField = (
+  record: Record<string, unknown>,
+  key: string,
 ): string | undefined => {
-  const responseId = providerMetadata?.openai?.responseId;
-  return typeof responseId === "string" && responseId.length > 0
-    ? responseId
-    : undefined;
+  const value = record[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
+const extractResponseId = (payload: unknown): string | undefined => {
+  if (!isRecord(payload)) return undefined;
+  return getStringField(payload, "id");
+};
+
+const extractResponseText = (payload: unknown): string => {
+  if (!isRecord(payload)) return "";
+
+  const outputText = payload["output_text"];
+  if (typeof outputText === "string") {
+    return outputText;
+  }
+  if (Array.isArray(outputText)) {
+    const joinedOutputText = outputText
+      .filter((part): part is string => typeof part === "string")
+      .join("");
+    if (joinedOutputText.length > 0) {
+      return joinedOutputText;
+    }
+  }
+
+  const output = payload["output"];
+  if (!Array.isArray(output)) {
+    return "";
+  }
+
+  const textParts: string[] = [];
+  for (const item of output) {
+    if (!isRecord(item)) continue;
+    const content = item["content"];
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!isRecord(part)) continue;
+      const partType = getStringField(part, "type");
+      if (partType !== "output_text" && partType !== "text") continue;
+      const text = getStringField(part, "text");
+      if (text) textParts.push(text);
+    }
+  }
+  return textParts.join("");
+};
+
+const buildOpenAIResponsesRequestBody = (
+  input: OpenAIResponsesRequestInput,
+  stream: boolean,
+): Record<string, unknown> => {
+  return {
+    model: input.model,
+    input: input.prompt,
+    instructions: input.instructions,
+    ...(input.previousResponseId
+      ? { previous_response_id: input.previousResponseId }
+      : {}),
+    ...(stream ? { stream: true } : {}),
+  };
+};
+
+const requestOpenAIResponses = async (
+  input: OpenAIResponsesRequestInput,
+  stream: boolean,
+): Promise<Response> => {
+  const response = await fetch(OPENAI_RESPONSES_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${input.apiKey}`,
+      ...(stream ? { "Accept": "text/event-stream" } : {}),
+    },
+    body: JSON.stringify(buildOpenAIResponsesRequestBody(input, stream)),
+  });
+
+  if (response.ok) {
+    return response;
+  }
+
+  const errorBody = await response.text().catch(() => "");
+  const errorDetail = errorBody.length > 0
+    ? errorBody.slice(0, 500)
+    : response.statusText;
+  throw new Error(
+    `OpenAI Responses API request failed (${response.status}): ${errorDetail}`,
+  );
+};
+
+const generateOpenAIResponse = async (
+  input: OpenAIResponsesRequestInput,
+): Promise<{ reply: string; responseId?: string }> => {
+  const response = await requestOpenAIResponses(input, false);
+  const payload = await response.json() as OpenAIResponsesApiResponse;
+  const reply = extractResponseText(payload);
+  if (reply.length === 0) {
+    throw new Error("OpenAI Responses API returned empty output text.");
+  }
+  return {
+    reply,
+    responseId: extractResponseId(payload),
+  };
+};
+
+const streamOpenAIResponse = async (
+  input: OpenAIResponsesRequestInput,
+  onDelta: (delta: string) => Promise<void> | void,
+): Promise<{ reply: string; responseId?: string }> => {
+  const response = await requestOpenAIResponses(input, true);
+  if (!response.body) {
+    throw new Error("OpenAI Responses API stream body is missing.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let reply = "";
+  let responseId: string | undefined;
+
+  const processEventData = async (data: string) => {
+    if (data.length === 0 || data === "[DONE]") {
+      return;
+    }
+
+    const payload = JSON.parse(data) as unknown;
+    if (!isRecord(payload)) {
+      return;
+    }
+
+    const type = getStringField(payload, "type");
+    if (type === "response.output_text.delta") {
+      const delta = getStringField(payload, "delta");
+      if (delta) {
+        reply += delta;
+        await onDelta(delta);
+      }
+      const responseIdFromEvent = getStringField(payload, "response_id");
+      if (responseIdFromEvent) {
+        responseId = responseIdFromEvent;
+      }
+      return;
+    }
+
+    if (type === "response.created" || type === "response.completed") {
+      const responsePayload = payload["response"];
+      if (extractResponseId(responsePayload)) {
+        responseId = extractResponseId(responsePayload);
+      }
+      if (type === "response.completed" && reply.length === 0) {
+        const completedText = extractResponseText(responsePayload);
+        if (completedText.length > 0) {
+          reply = completedText;
+          await onDelta(completedText);
+        }
+      }
+      return;
+    }
+
+    if (type === "response.error" || type === "error") {
+      const error = payload["error"];
+      if (isRecord(error)) {
+        const message = getStringField(error, "message");
+        if (message) {
+          throw new Error(`OpenAI Responses API stream error: ${message}`);
+        }
+      }
+      throw new Error("OpenAI Responses API stream returned an error event.");
+    }
+  };
+
+  const processEventBlock = async (eventBlock: string) => {
+    if (eventBlock.trim().length === 0) {
+      return;
+    }
+    const dataLines: string[] = [];
+    for (const line of eventBlock.split("\n")) {
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (dataLines.length === 0) {
+      return;
+    }
+    await processEventData(dataLines.join("\n"));
+  };
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true }).replaceAll("\r\n", "\n");
+    let separatorIndex = buffer.indexOf("\n\n");
+    while (separatorIndex !== -1) {
+      const eventBlock = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      await processEventBlock(eventBlock);
+      separatorIndex = buffer.indexOf("\n\n");
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.length > 0) {
+    await processEventBlock(buffer);
+  }
+
+  if (reply.length === 0) {
+    throw new Error("OpenAI Responses API stream returned no output text.");
+  }
+
+  return { reply, responseId };
 };
 
 const toThreadTs = (
@@ -165,30 +376,16 @@ const shouldHandleEventType = (
 
 const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 
-type CreateOpenAIFactory = Awaited<
-  typeof import("npm:@ai-sdk/openai")
->["createOpenAI"];
-
-let cachedCreateOpenAI: CreateOpenAIFactory | undefined;
-
-const getCreateOpenAI = async (): Promise<CreateOpenAIFactory> => {
-  if (cachedCreateOpenAI) {
-    return cachedCreateOpenAI;
-  }
-  const module = await import("npm:@ai-sdk/openai");
-  cachedCreateOpenAI = module.createOpenAI;
-  return cachedCreateOpenAI;
-};
-
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
+  extractResponseText,
+  buildOpenAIResponsesRequestBody,
   toThreadTs,
   shouldFlushChannelPseudoStream,
   normalizeEventType,
   shouldHandleEventType,
   hasAnyMentionToken,
-  getCreateOpenAI,
 };
 
 export default SlackFunction(
@@ -285,16 +482,13 @@ export default SlackFunction(
       timeoutMs,
     );
 
-    const openAIOptions = {
+    const openAIRequestInput: OpenAIResponsesRequestInput = {
+      apiKey: slackEnv.OPENAI_API_KEY,
+      model: env.GPT_MODEL,
+      prompt: content,
       instructions: systemMessage,
       ...(previousResponseId ? { previousResponseId } : {}),
     };
-
-    const createOpenAI = await getCreateOpenAI();
-    const openAI = createOpenAI({
-      apiKey: slackEnv.OPENAI_API_KEY,
-      baseURL: "https://api.openai.com/v1",
-    });
 
     const runNonStreaming = async (
       options?: { threadTs?: string },
@@ -305,13 +499,7 @@ export default SlackFunction(
       console.log("Slack reply mode: non-streaming");
       let result;
       try {
-        result = await generateText({
-          model: openAI(env.GPT_MODEL),
-          prompt: content,
-          providerOptions: {
-            openai: openAIOptions,
-          },
-        });
+        result = await generateOpenAIResponse(openAIRequestInput);
       } catch (error) {
         console.warn(
           `OpenAI reply request failed. Falling back to static message. Error: ${
@@ -332,7 +520,7 @@ export default SlackFunction(
         return { reply };
       }
 
-      const reply = result.text;
+      const reply = result.reply;
       try {
         await client.chat.postMessage({
           channel: inputs.channelId,
@@ -348,9 +536,7 @@ export default SlackFunction(
       }
       return {
         reply,
-        responseId: extractResponseId(
-          result.providerMetadata as OpenAIProviderMetadata | undefined,
-        ),
+        responseId: result.responseId,
       };
     };
 
@@ -368,13 +554,6 @@ export default SlackFunction(
       responseId?: string;
     }> => {
       console.log("Slack reply mode: streaming");
-      const streamResult = streamText({
-        model: openAI(env.GPT_MODEL),
-        prompt: content,
-        providerOptions: {
-          openai: openAIOptions,
-        },
-      });
 
       let reply = "";
       let streamTs: string | undefined;
@@ -400,34 +579,37 @@ export default SlackFunction(
         }
       };
 
-      for await (const chunk of streamResult.textStream) {
-        reply += chunk;
-        if (!streamTs) {
-          const startResponse = await client.apiCall("chat.startStream", {
-            channel: inputs.channelId,
-            thread_ts: threadTs as string,
-            recipient_user_id: inputs.userId as string,
-            recipient_team_id: streamTeamId as string,
-            markdown_text: chunk,
-          }) as SlackStreamResponse;
-          if (!startResponse.ok || !startResponse.ts) {
-            throw new StreamingReplyError(
-              `Failed to start Slack stream: ${
-                startResponse.error ?? "unknown_error"
-              }`,
-              { streamStarted, partialReply: reply },
-            );
+      const streamResult = await streamOpenAIResponse(
+        openAIRequestInput,
+        async (chunk) => {
+          reply += chunk;
+          if (!streamTs) {
+            const startResponse = await client.apiCall("chat.startStream", {
+              channel: inputs.channelId,
+              thread_ts: threadTs as string,
+              recipient_user_id: inputs.userId as string,
+              recipient_team_id: streamTeamId as string,
+              markdown_text: chunk,
+            }) as SlackStreamResponse;
+            if (!startResponse.ok || !startResponse.ts) {
+              throw new StreamingReplyError(
+                `Failed to start Slack stream: ${
+                  startResponse.error ?? "unknown_error"
+                }`,
+                { streamStarted, partialReply: reply },
+              );
+            }
+            streamTs = startResponse.ts;
+            streamStarted = true;
+            return;
           }
-          streamTs = startResponse.ts;
-          streamStarted = true;
-          continue;
-        }
 
-        pending += chunk;
-        if (pending.length >= 160) {
-          await appendStream();
-        }
-      }
+          pending += chunk;
+          if (pending.length >= 160) {
+            await appendStream();
+          }
+        },
+      );
 
       if (!streamTs) {
         throw new StreamingReplyError(
@@ -450,12 +632,9 @@ export default SlackFunction(
         );
       }
 
-      const providerMetadata = await streamResult.providerMetadata;
       return {
-        reply,
-        responseId: extractResponseId(
-          providerMetadata as OpenAIProviderMetadata | undefined,
-        ),
+        reply: streamResult.reply,
+        responseId: streamResult.responseId,
       };
     };
 
@@ -464,13 +643,6 @@ export default SlackFunction(
       responseId?: string;
     }> => {
       console.log("Slack reply mode: pseudo-streaming in channel");
-      const streamResult = streamText({
-        model: openAI(env.GPT_MODEL),
-        prompt: content,
-        providerOptions: {
-          openai: openAIOptions,
-        },
-      });
 
       let reply = "";
       let messageTs: string | undefined;
@@ -511,25 +683,28 @@ export default SlackFunction(
       };
 
       try {
-        for await (const chunk of streamResult.textStream) {
-          reply += chunk;
-          if (!messageTs) {
-            messageTs = await postInitialMessage(reply);
-            lastUpdateAt = Date.now();
-            continue;
-          }
+        const streamResult = await streamOpenAIResponse(
+          openAIRequestInput,
+          async (chunk) => {
+            reply += chunk;
+            if (!messageTs) {
+              messageTs = await postInitialMessage(reply);
+              lastUpdateAt = Date.now();
+              return;
+            }
 
-          pendingChars += chunk.length;
-          const now = Date.now();
-          const elapsedMs = now - lastUpdateAt;
-          if (!shouldFlushChannelPseudoStream(pendingChars, elapsedMs)) {
-            continue;
-          }
+            pendingChars += chunk.length;
+            const now = Date.now();
+            const elapsedMs = now - lastUpdateAt;
+            if (!shouldFlushChannelPseudoStream(pendingChars, elapsedMs)) {
+              return;
+            }
 
-          await updateMessage(messageTs, reply);
-          pendingChars = 0;
-          lastUpdateAt = now;
-        }
+            await updateMessage(messageTs, reply);
+            pendingChars = 0;
+            lastUpdateAt = now;
+          },
+        );
 
         if (!messageTs) {
           throw new Error("No stream output produced.");
@@ -539,12 +714,9 @@ export default SlackFunction(
           await updateMessage(messageTs, reply);
         }
 
-        const providerMetadata = await streamResult.providerMetadata;
         return {
-          reply,
-          responseId: extractResponseId(
-            providerMetadata as OpenAIProviderMetadata | undefined,
-          ),
+          reply: streamResult.reply,
+          responseId: streamResult.responseId,
         };
       } catch (error) {
         console.warn(
