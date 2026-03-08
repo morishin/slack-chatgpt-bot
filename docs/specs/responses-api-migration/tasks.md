@@ -5,8 +5,6 @@
 - [x] Merge datastores into `ConversationSession` and include `systemMessage`
 - [x] Refactor `reply_workflow` to remove `put_message_history` steps
 - [x] Refactor `stream_reply_function` to use direct Responses API calls (fetch)
-- [x] Add optional Responses tools (`web_search`, `code_interpreter`) via env
-      flags
 - [x] Remove obsolete message history function from manifest/workflow path
 - [x] Update/add tests for session key and timeout logic
 - [x] Update README for Responses API-based behavior
