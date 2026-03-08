@@ -67,9 +67,16 @@ type OpenAIResponsesRequestInput = {
 
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses";
 
-type OpenAIResponseTool = {
-  type: "web_search" | "code_interpreter";
-};
+type OpenAIResponseTool =
+  | {
+    type: "web_search";
+  }
+  | {
+    type: "code_interpreter";
+    container: {
+      type: "auto";
+    };
+  };
 
 class StreamingReplyError extends Error {
   streamStarted: boolean;
@@ -189,7 +196,10 @@ const getConfiguredOpenAITools = (): OpenAIResponseTool[] => {
     tools.push({ type: "web_search" });
   }
   if (env.OPENAI_ENABLE_CODE_INTERPRETER) {
-    tools.push({ type: "code_interpreter" });
+    tools.push({
+      type: "code_interpreter",
+      container: { type: "auto" },
+    });
   }
   return tools;
 };
