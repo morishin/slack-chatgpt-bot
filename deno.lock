@@ -2,10 +2,7 @@
   "version": "4",
   "specifiers": {
     "jsr:@slack/api@2.9.0": "2.9.0",
-    "jsr:@std/collections@^1.0.5": "1.0.10",
-    "jsr:@std/http@0.206": "0.206.0",
-    "jsr:@std/jsonc@^1.0.1": "1.0.1",
-    "jsr:@std/path@^1.0.3": "1.0.6"
+    "jsr:@std/http@0.206": "0.206.0"
   },
   "jsr": {
     "@slack/api@2.9.0": {
@@ -14,22 +11,11 @@
         "jsr:@std/http"
       ]
     },
-    "@std/collections@1.0.10": {
-      "integrity": "903af106a3d92970d74e20f7ebff77d9658af9bef4403f1dc42a7801c0575899"
-    },
     "@std/http@0.206.0": {
       "integrity": "8e172a7129339fb80e7c9b36fc6bc6c0dd3f22d02c48b081d5dcfdc37cd1ea38"
-    },
-    "@std/jsonc@1.0.1": {
-      "integrity": "6b36956e2a7cbb08ca5ad7fbec72e661e6217c202f348496ea88747636710dda"
-    },
-    "@std/path@1.0.6": {
-      "integrity": "ab2c55f902b380cf28e0eec501b4906e4c1960d13f00e11cfbcd21de15f18fed"
     }
   },
   "remote": {
-    "https://deno.land/std@0.134.0/_util/assert.ts": "e94f2eb37cebd7f199952e242c77654e43333c1ac4c5c700e929ea3aa5489f74",
-    "https://deno.land/std@0.134.0/flags/mod.ts": "9bd361fd5487f5e06cae4e0b5237a83c2908202f4a76944ba1312029f6c11b95",
     "https://deno.land/std@0.224.0/assert/_constants.ts": "a271e8ef5a573f1df8e822a6eb9d09df064ad66a4390f21b3e31f820a38e0975",
     "https://deno.land/std@0.224.0/assert/assert.ts": "09d30564c09de846855b7b071e62b5974b001bb72a4b797958fe0660e7849834",
     "https://deno.land/std@0.224.0/assert/assert_almost_equals.ts": "9e416114322012c9a21fa68e187637ce2d7df25bcbdbfd957cd639e65d3cf293",
@@ -138,10 +124,6 @@
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/workflows/triggers/trigger-filter.ts": "db0583587e893b9dd4e30e1e413c5b177ac032c9053510bcdbd3d099b23130b6",
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/workflows/triggers/webhook.ts": "3aabfdc8daafd63dfe9db205811874256865130a31715d01117059c5bef6f351",
     "https://deno.land/x/deno_slack_api@2.9.3/types.ts": "bf747eb40d16c152f73c0e865f9e745990047236331fab179d6d0f69899324eb",
-    "https://deno.land/x/deno_slack_hooks@1.3.2/get_manifest.ts": "1eda87744f65d9bf0b81a0f3b8510657f40e6b2e7549bf843fc097a896c8686e",
-    "https://deno.land/x/deno_slack_hooks@1.3.2/utilities.ts": "536c5fb3551bb0b796534375ba3becf82c5e1aaa775daf747fd077b1f503d930",
-    "https://deno.land/x/deno_slack_protocols@0.0.2/deps.ts": "8ff2d185ecc28403588fdc108c58bb5d77181a67f209af29932ec1029cbf94e6",
-    "https://deno.land/x/deno_slack_protocols@0.0.2/mod.ts": "9de77fa9a0ccb7ca74b84e674c3fae7675ed487ff98a82d39a865f59f7df28e3",
     "https://deno.land/x/deno_slack_sdk@2.15.2/datastore/mod.ts": "0ebd6667a26e253c25c557ae1a091099d725d3fd940a07abddd11d8861aa8c58",
     "https://deno.land/x/deno_slack_sdk@2.15.2/datastore/types.ts": "73600c213b14bdd76cd7349c19fb01050dc8a4e4d94b5ad02bfcbc05d2a39039",
     "https://deno.land/x/deno_slack_sdk@2.15.2/deps.ts": "affcd19fdc0901250e632d696764d7f8c69d9bd52fb084d146de47ed45877b46",
