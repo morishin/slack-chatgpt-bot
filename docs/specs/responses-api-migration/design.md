@@ -23,7 +23,8 @@ Responses API calls (`fetch`) using conversation chaining.
    - optional `previous_response_id`
    - optional `tools` from env flags
      - `OPENAI_ENABLE_WEB_SEARCH` -> `{ "type": "web_search" }`
-     - `OPENAI_ENABLE_CODE_INTERPRETER` -> `{ "type": "code_interpreter" }`
+   - `OPENAI_ENABLE_CODE_INTERPRETER` ->
+     `{ "type": "code_interpreter", "container": { "type": "auto" } }`
    - `stream: true` when streaming/pseudo-streaming path is used
 8. Post reply to Slack:
    - thread mode: Slack stream APIs

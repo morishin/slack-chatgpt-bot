@@ -133,3 +133,21 @@ Deno.test("buildOpenAIResponsesRequestBody includes previous_response_id", () =>
   assertEquals(body["tools"], [{ type: "web_search" }]);
   assertEquals(body["stream"], true);
 });
+
+Deno.test("buildOpenAIResponsesRequestBody supports code interpreter container", () => {
+  const body = streamReplyInternals.buildOpenAIResponsesRequestBody(
+    {
+      apiKey: "dummy",
+      model: "gpt-5-nano",
+      prompt: "run python",
+      instructions: "You are helpful.",
+      tools: [{ type: "code_interpreter", container: { type: "auto" } }],
+    },
+    false,
+  );
+
+  assertEquals(
+    body["tools"],
+    [{ type: "code_interpreter", container: { type: "auto" } }],
+  );
+});
