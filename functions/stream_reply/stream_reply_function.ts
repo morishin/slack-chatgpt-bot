@@ -1,9 +1,5 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { generateText, streamText } from "npm:ai";
-import {
-  createOpenAI,
-  type OpenAILanguageModelResponsesOptions,
-} from "npm:@ai-sdk/openai";
 
 import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
 import { env } from "../../env.ts";
@@ -169,6 +165,21 @@ const shouldHandleEventType = (
 
 const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 
+type CreateOpenAIFactory = Awaited<
+  typeof import("npm:@ai-sdk/openai")
+>["createOpenAI"];
+
+let cachedCreateOpenAI: CreateOpenAIFactory | undefined;
+
+const getCreateOpenAI = async (): Promise<CreateOpenAIFactory> => {
+  if (cachedCreateOpenAI) {
+    return cachedCreateOpenAI;
+  }
+  const module = await import("npm:@ai-sdk/openai");
+  cachedCreateOpenAI = module.createOpenAI;
+  return cachedCreateOpenAI;
+};
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
@@ -177,6 +188,7 @@ export const streamReplyInternals = {
   normalizeEventType,
   shouldHandleEventType,
   hasAnyMentionToken,
+  getCreateOpenAI,
 };
 
 export default SlackFunction(
@@ -273,11 +285,12 @@ export default SlackFunction(
       timeoutMs,
     );
 
-    const openAIOptions: OpenAILanguageModelResponsesOptions = {
+    const openAIOptions = {
       instructions: systemMessage,
       ...(previousResponseId ? { previousResponseId } : {}),
     };
 
+    const createOpenAI = await getCreateOpenAI();
     const openAI = createOpenAI({
       apiKey: slackEnv.OPENAI_API_KEY,
       baseURL: "https://api.openai.com/v1",
