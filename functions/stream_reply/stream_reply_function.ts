@@ -278,7 +278,10 @@ export default SlackFunction(
       ...(previousResponseId ? { previousResponseId } : {}),
     };
 
-    const openAI = createOpenAI({ apiKey: slackEnv.OPENAI_API_KEY });
+    const openAI = createOpenAI({
+      apiKey: slackEnv.OPENAI_API_KEY,
+      baseURL: "https://api.openai.com/v1",
+    });
 
     const runNonStreaming = async (
       options?: { threadTs?: string },

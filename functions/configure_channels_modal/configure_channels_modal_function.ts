@@ -6,7 +6,8 @@ import {
 import { TriggerEventTypes } from "deno-slack-api/typed-method-types/workflows/triggers/trigger-event-types.ts";
 import { SlackAPIClient } from "deno-slack-api/types.ts";
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { ReplyWorkflow } from "../../workflows/reply_workflow.ts";
+
+const REPLY_WORKFLOW_CALLBACK_ID = "reply_workflow";
 
 export const ConfigureChannelsModalFunctionDefinition = DefineFunction({
   callback_id: "configure_channels_modal_function",
@@ -160,7 +161,7 @@ const buildModalView = (channelIds: string[]) => ({
 });
 
 const findReplyWorkflowEventTriggers = async (client: SlackAPIClient): Promise<
-  EventTriggerResponseObject<typeof ReplyWorkflow.definition>[]
+  EventTriggerResponseObject<any>[]
 > => {
   const allTriggers = await client.workflows.triggers.list({ is_owner: true });
   if (!allTriggers.ok) {
@@ -169,11 +170,10 @@ const findReplyWorkflowEventTriggers = async (client: SlackAPIClient): Promise<
 
   // Find reply workflow event triggers to update.
   const existingTriggers = allTriggers.triggers.filter((trigger) =>
-    trigger.workflow.callback_id ===
-      ReplyWorkflow.definition.callback_id &&
+    trigger.workflow.callback_id === REPLY_WORKFLOW_CALLBACK_ID &&
     (trigger.event_type === TriggerEventTypes.AppMentioned ||
       trigger.event_type === TriggerEventTypes.MessagePosted)
-  ) as EventTriggerResponseObject<typeof ReplyWorkflow.definition>[];
+  ) as EventTriggerResponseObject<any>[];
 
   return existingTriggers;
 };
@@ -183,7 +183,7 @@ const createReplyTriggers = async (
   channelId: string,
 ): Promise<{
   error?: string;
-  triggers: EventTriggerResponseObject<typeof ReplyWorkflow.definition>[];
+  triggers: EventTriggerResponseObject<any>[];
 }> => {
   const mention = await createReplyTrigger(
     client,
@@ -207,15 +207,13 @@ const createReplyTriggers = async (
 
 const createReplyTrigger = async (
   client: SlackAPIClient,
-  config: ValidTriggerTypes<typeof ReplyWorkflow.definition>,
+  config: ValidTriggerTypes<any>,
 ): Promise<{
   ok: boolean;
   error?: string;
-  trigger?: EventTriggerResponseObject<typeof ReplyWorkflow.definition>;
+  trigger?: EventTriggerResponseObject<any>;
 }> => {
-  const createTriggerResponse = await client.workflows.triggers.create<
-    typeof ReplyWorkflow.definition
-  >(config);
+  const createTriggerResponse = await client.workflows.triggers.create(config);
   if (!createTriggerResponse.ok) {
     return { ok: false, error: createTriggerResponse.error };
   }
@@ -226,13 +224,13 @@ const createReplyTrigger = async (
 const deleteTrigger = (client: SlackAPIClient, triggerId: string) =>
   client.workflows.triggers.delete({ trigger_id: triggerId });
 
-const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
-  typeof ReplyWorkflow.definition
-> => (
+const makeMentionTriggerConfig = (
+  channelId: string,
+): ValidTriggerTypes<any> => (
   {
     type: "event",
     name: "mention trigger",
-    workflow: `#/workflows/${ReplyWorkflow.definition.callback_id}`,
+    workflow: `#/workflows/${REPLY_WORKFLOW_CALLBACK_ID}`,
     inputs: {
       channelId: {
         value: TriggerContextData.Event.AppMentioned.channel_id,
@@ -259,9 +257,7 @@ const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
 
 const makeThreadFollowupTriggerConfig = (
   channelId: string,
-): ValidTriggerTypes<
-  typeof ReplyWorkflow.definition
-> => {
+): ValidTriggerTypes<any> => {
   // Build filter statements from TriggerContextData constants to avoid
   // hard-coded placeholder strings.
   // Example value: "{{data.thread_ts}}"
@@ -270,7 +266,7 @@ const makeThreadFollowupTriggerConfig = (
   return {
     type: "event",
     name: "thread follow-up trigger",
-    workflow: `#/workflows/${ReplyWorkflow.definition.callback_id}`,
+    workflow: `#/workflows/${REPLY_WORKFLOW_CALLBACK_ID}`,
     inputs: {
       channelId: {
         value: TriggerContextData.Event.MessagePosted.channel_id,
