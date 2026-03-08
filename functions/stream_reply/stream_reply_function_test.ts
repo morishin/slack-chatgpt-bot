@@ -121,6 +121,7 @@ Deno.test("buildOpenAIResponsesRequestBody includes previous_response_id", () =>
       prompt: "hello",
       instructions: "You are helpful.",
       previousResponseId: "resp_123",
+      tools: [{ type: "web_search" }],
     },
     true,
   );
@@ -129,5 +130,6 @@ Deno.test("buildOpenAIResponsesRequestBody includes previous_response_id", () =>
   assertEquals(body["input"], "hello");
   assertEquals(body["instructions"], "You are helpful.");
   assertEquals(body["previous_response_id"], "resp_123");
+  assertEquals(body["tools"], [{ type: "web_search" }]);
   assertEquals(body["stream"], true);
 });
