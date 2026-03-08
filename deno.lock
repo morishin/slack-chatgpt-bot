@@ -4,6 +4,7 @@
     "jsr:@slack/api@2.9.0": "2.9.0",
     "jsr:@std/collections@^1.0.5": "1.0.10",
     "jsr:@std/http@0.206": "0.206.0",
+    "jsr:@std/http@0.206.0": "0.206.0",
     "jsr:@std/jsonc@^1.0.1": "1.0.1",
     "jsr:@std/path@^1.0.3": "1.0.6"
   },
@@ -11,7 +12,7 @@
     "@slack/api@2.9.0": {
       "integrity": "839dae672f4ff85a98cef7a5e0508943902ac4c1f74e0d072e954b96882fc4d9",
       "dependencies": [
-        "jsr:@std/http"
+        "jsr:@std/http@0.206"
       ]
     },
     "@std/collections@1.0.10": {
@@ -63,6 +64,9 @@
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
+    "https://deno.land/x/deno_slack_api@2.9.3/api-proxy.ts": "652c4e7cb1420b8c865347bcaeb78d3fd2ffd0f8f27215e2053de9176faa4e6f",
+    "https://deno.land/x/deno_slack_api@2.9.3/base-client-helpers.ts": "0946472bffd91296337b75871a57d322de340f51d4dd8cd9331c017c6b892185",
+    "https://deno.land/x/deno_slack_api@2.9.3/base-client.ts": "930e8b5bd17fa883ce872159a3a2f0757efada32fd37658154ef9d42fca3a678",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/admin.ts": "3564a56c3b24ca9e983e6c9e23e27916f975387ad29c820ac5264861b035fa37",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/api.ts": "b6e55651d5361c8014456ce7298577e24cc7f0e5b5778db7aa39b4bc52f6be6e",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/apps.ts": "71a560384acc883de891499dd915209ed8fd99326649f649884c53c5f3fa7d8b",
@@ -94,6 +98,7 @@
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/users.ts": "45ecbeea4cbd1880248aeb027acbe7f6467df084ae4214c0a3b068d99ac13357",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/views.ts": "12ed9848a217b3ca83dd1378414c62a305711c7937635aed2bcc8af8838bcd75",
     "https://deno.land/x/deno_slack_api@2.9.3/generated/method-types/workflows.ts": "92a3a8f8bc6a7c121d4a7435eadc02e42a5d8a308709fdfddc5ae3c4fe373045",
+    "https://deno.land/x/deno_slack_api@2.9.3/mod.ts": "bd5e786933654c7b703ad5edb637789cddd7d7f0379ba984713bfb74028f96e3",
     "https://deno.land/x/deno_slack_api@2.9.3/type-helpers.ts": "0b60b05f32096c8e1df045864cdca7bdb58acc68716076cf218dfe09a2677066",
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/apps.ts": "d6c6d96bdfe71d2c909a85ab94c53ee8fce060111ec458e7edbe2f30826755f3",
     "https://deno.land/x/deno_slack_api@2.9.3/typed-method-types/chat.ts": "82eacb46ac73b94f70f133f39b3882ee859340450bc48a0654b6296e96e220a0",
