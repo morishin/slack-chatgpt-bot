@@ -7,20 +7,25 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 
 ## High-Level Flow
 
-1. Receive mention event inputs (`channelId`, `message`).
+1. Receive event inputs (`channelId`, `message`, optional `eventType`).
 2. Trim mention and ignore empty content.
 3. Read conversation session record from datastore (`MessageHistory` on Slack).
 4. Resolve `systemMessage` from datastore (fallback to
    `env.INITIAL_SYSTEM_MESSAGE`).
-5. Resolve whether to include `previous_response_id` based on timeout.
-6. Call `generateText` with:
+5. Gate processing by event type and channel config:
+   - always process `app_mentioned`
+   - process `message_posted` only when `replyInThread=true`
+6. Resolve whether to include `previous_response_id` based on timeout.
+7. Call `generateText` / `streamText` with:
    - model: `openAI(env.GPT_MODEL)`
    - prompt: current user message
    - provider options:
      - `instructions`: system message
      - optional `previousResponseId`
-7. Post reply to Slack using `chat.postMessage`.
-8. Save latest `responseId` and timestamp to datastore (`MessageHistory` on
+8. Post reply to Slack:
+   - thread mode: Slack stream APIs
+   - channel mode: pseudo-stream (`chat.postMessage` + `chat.update`)
+9. Save latest `responseId` and timestamp to datastore (`MessageHistory` on
    Slack).
 
 ## Data Model
@@ -31,6 +36,7 @@ Replace Chat Completions + Slack-stored message history with AI SDK
 - `systemMessage`
 - `previousResponseId`
 - `lastInteractionAt` (unix epoch milliseconds)
+- `replyInThread`
 
 Slack datastore name must stay `MessageHistory` for backward compatibility.
 
@@ -38,14 +44,27 @@ Slack datastore name must stay `MessageHistory` for backward compatibility.
 
 ### Reply workflow
 
-- Remove `put_message_history` steps.
-- Pass original mention inputs directly to `stream_reply_function`.
+- Pass trigger inputs directly to `stream_reply_function`.
+- Include optional `eventType` to distinguish `app_mentioned` and
+  `message_posted` invocations.
+
+### Trigger configuration
+
+`configure_channels_modal_function` recreates event triggers per selected
+channel:
+
+- `app_mentioned` trigger for explicit mentions
+- `message_posted` trigger for follow-up thread replies without mention
+  - filter requires thread replies (non-null `thread_ts`)
 
 ### Stream reply function
 
-- Replace direct `fetch` streaming logic with AI SDK `generateText`.
-- Keep function callback id (`stream_reply_function`) for compatibility.
-- Use non-streaming Slack posting.
+- Keep callback id (`stream_reply_function`) for compatibility.
+- Use AI SDK with Responses API chaining.
+- Enforce event-type gate:
+  - ignore `message_posted` when channel is not in thread-reply mode
+- Thread mode uses Slack stream APIs.
+- Channel mode uses pseudo-streaming.
 
 ## Error Handling
 
@@ -58,5 +77,5 @@ Slack datastore name must stay `MessageHistory` for backward compatibility.
 
 - Keep Slack datastore name as `MessageHistory` to preserve existing production
   `systemMessage` values.
-- Mention trigger payload can still include extra fields; reply path depends on
-  `channelId` and `message`.
+- Maintain existing mention interaction while adding thread follow-up handling
+  through `message_posted`.

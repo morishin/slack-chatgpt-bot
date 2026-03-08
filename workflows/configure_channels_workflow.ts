@@ -5,7 +5,7 @@ export const ConfigureChannelsWorkflow = DefineWorkflow({
   callback_id: "configure_channels",
   title: "Select channels where ChagGPT bot works",
   description:
-    "Create or update an event trigger (subscribing an event type: `app_mentioned`) with specified channel IDs",
+    "Create or update event triggers (`app_mentioned` and `message_posted`) with specified channel IDs",
   input_parameters: {
     properties: {
       interactivity: { type: Schema.slack.types.interactivity },

@@ -28,9 +28,13 @@ If elapsed time from the last interaction exceeds a configurable threshold
 (`RESPONSE_CHAIN_TIMEOUT_MINUTES`), the bot must start a new chain without
 `previous_response_id`.
 
-### FR-4: Non-Streaming Slack Reply
+### FR-4: Slack Reply Mode By Channel Setting
 
-The bot must post replies via `chat.postMessage` (non-streaming).
+The bot must select reply behavior by channel setting:
+
+- `replyInThread=true`: reply in thread using Slack stream APIs
+- `replyInThread=false`: reply in channel using pseudo-streaming
+  (`chat.postMessage` + `chat.update`)
 
 ### FR-5: System Message Preservation
 
@@ -47,6 +51,24 @@ construction.
 
 Session scope must be channel-based and keyed by `channelId`.
 
+### FR-8: Thread Follow-up Without Mention
+
+When `replyInThread` is enabled for a channel, the bot must respond to
+`message_posted` events in that channel's threads even when the message does not
+mention the bot.
+
+### FR-9: Event-Type-Aware Reply Gate
+
+The bot must keep mention-driven behavior as default, and process
+`message_posted` events only when `replyInThread` is enabled for that channel.
+
+### FR-10: Trigger Pair Management Per Channel
+
+Channel configuration must maintain event triggers as a pair per channel:
+
+- `app_mentioned` trigger (existing behavior)
+- `message_posted` trigger with filter for thread replies
+
 ## Non-Functional Requirements
 
 ### NFR-1: Backward Compatibility
@@ -54,6 +76,11 @@ Session scope must be channel-based and keyed by `channelId`.
 Existing mention trigger/workflow behavior should remain compatible from user
 perspective. Slack datastore name must remain `MessageHistory` so existing
 production `systemMessage` data is preserved.
+
+### NFR-4: Event Scope Completeness
+
+Manifest scopes must include permissions required by `message_posted` event
+triggers used by this app.
 
 ### NFR-2: Type Safety
 

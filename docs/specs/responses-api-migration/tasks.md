@@ -10,3 +10,9 @@
 - [x] Update README for Responses API-based behavior
 - [x] Run `deno check manifest.ts`
 - [x] Run related test suites
+- [x] Add `message_posted` event trigger creation in channel configurator
+- [x] Recreate configured channel triggers as mention + thread-followup pair
+- [x] Add optional event type input to reply workflow/function path
+- [x] Gate reply processing by `eventType` and `replyInThread`
+- [x] Add manifest scopes required for `message_posted` trigger
+- [x] Run `deno check manifest.ts` and related tests

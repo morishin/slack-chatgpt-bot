@@ -26,6 +26,9 @@ export const StreamReplyFunctionDefinition = DefineFunction({
       messageTs: {
         type: Schema.slack.types.message_ts,
       },
+      eventType: {
+        type: Schema.types.string,
+      },
     },
     required: ["channelId", "systemMessage"],
   },
@@ -61,6 +64,21 @@ type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
 };
+
+class StreamingReplyError extends Error {
+  streamStarted: boolean;
+  partialReply: string;
+
+  constructor(
+    message: string,
+    options?: { streamStarted?: boolean; partialReply?: string },
+  ) {
+    super(message);
+    this.name = "StreamingReplyError";
+    this.streamStarted = options?.streamStarted ?? false;
+    this.partialReply = options?.partialReply ?? "";
+  }
+}
 
 const trimMention = (message: string): string => {
   return message.replace(/<@.+>\s?/, "").trim();
@@ -127,19 +145,55 @@ const shouldFlushChannelPseudoStream = (
     elapsedMs >= CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS;
 };
 
+const normalizeEventType = (
+  eventType: string | undefined,
+): string | undefined => {
+  if (!eventType) return undefined;
+  const suffix = eventType.split("/").at(-1);
+  return suffix ?? eventType;
+};
+
+const shouldHandleEventType = (
+  eventType: string | undefined,
+  replyInThread: boolean,
+): boolean => {
+  const normalizedEventType = normalizeEventType(eventType);
+  if (!normalizedEventType || normalizedEventType === "app_mentioned") {
+    return true;
+  }
+  if (normalizedEventType === "message_posted") {
+    return replyInThread;
+  }
+  return true;
+};
+
+const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
   toThreadTs,
   shouldFlushChannelPseudoStream,
+  normalizeEventType,
+  shouldHandleEventType,
+  hasAnyMentionToken,
 };
 
 export default SlackFunction(
   StreamReplyFunctionDefinition,
   async ({ inputs, client, env: slackEnv }) => {
+    const eventType = typeof inputs.eventType === "string"
+      ? inputs.eventType
+      : undefined;
+    const normalizedEventType = normalizeEventType(eventType);
+
     const content = trimMention(inputs.systemMessage);
     if (isBlank(content)) {
-      console.log("Skipping: StreamReplyFunction (empty message)");
+      console.log(
+        `Skipping: StreamReplyFunction (empty message, eventType=${
+          normalizedEventType ?? "unknown"
+        }, userId=${inputs.userId ?? "unknown"})`,
+      );
       return {
         outputs: {
           reply: "",
@@ -169,6 +223,43 @@ export default SlackFunction(
     const replyInThread = (sessionResponse.item?.replyInThread as
       | boolean
       | undefined) ?? false;
+    if (!shouldHandleEventType(eventType, replyInThread)) {
+      console.log(
+        `Skipping: StreamReplyFunction (eventType=${eventType}, replyInThread=${replyInThread})`,
+      );
+      return {
+        outputs: {
+          reply: "",
+        },
+      };
+    }
+    if (
+      normalizedEventType === "message_posted" &&
+      hasAnyMentionToken(inputs.systemMessage)
+    ) {
+      console.log(
+        "Skipping: StreamReplyFunction (message_posted with mention text)",
+      );
+      return {
+        outputs: {
+          reply: "",
+        },
+      };
+    }
+    if (normalizedEventType === "message_posted" && inputs.userId) {
+      const authTestResponse = await client.auth.test();
+      if (authTestResponse.ok && authTestResponse.user_id === inputs.userId) {
+        console.log(
+          "Skipping: StreamReplyFunction (message_posted from bot user)",
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+    }
+
     const previousResponseId = getPreviousResponseId(
       {
         previousResponseId: sessionResponse.item?.previousResponseId as
@@ -213,20 +304,32 @@ export default SlackFunction(
         );
         const reply =
           "Failed to generate a response. Please try again in a moment.";
+        try {
+          await client.chat.postMessage({
+            channel: inputs.channelId,
+            ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
+            text: reply,
+          });
+        } catch (_postError) {
+          // Ignore Slack posting errors in fallback path.
+        }
+        return { reply };
+      }
+
+      const reply = result.text;
+      try {
         await client.chat.postMessage({
           channel: inputs.channelId,
           ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
           text: reply,
         });
-        return { reply };
+      } catch (error) {
+        console.warn(
+          `Failed to post non-streaming Slack message: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
-
-      const reply = result.text;
-      await client.chat.postMessage({
-        channel: inputs.channelId,
-        ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
-        text: reply,
-      });
       return {
         reply,
         responseId: extractResponseId(
@@ -259,6 +362,7 @@ export default SlackFunction(
 
       let reply = "";
       let streamTs: string | undefined;
+      let streamStarted = false;
       let pending = "";
 
       const appendStream = async () => {
@@ -271,10 +375,11 @@ export default SlackFunction(
           markdown_text: text,
         }) as SlackStreamResponse;
         if (!appendResponse.ok) {
-          throw new Error(
+          throw new StreamingReplyError(
             `Failed to append Slack stream: ${
               appendResponse.error ?? "unknown_error"
             }`,
+            { streamStarted, partialReply: reply },
           );
         }
       };
@@ -290,13 +395,15 @@ export default SlackFunction(
             markdown_text: chunk,
           }) as SlackStreamResponse;
           if (!startResponse.ok || !startResponse.ts) {
-            throw new Error(
+            throw new StreamingReplyError(
               `Failed to start Slack stream: ${
                 startResponse.error ?? "unknown_error"
               }`,
+              { streamStarted, partialReply: reply },
             );
           }
           streamTs = startResponse.ts;
+          streamStarted = true;
           continue;
         }
 
@@ -307,7 +414,10 @@ export default SlackFunction(
       }
 
       if (!streamTs) {
-        throw new Error("No stream output produced.");
+        throw new StreamingReplyError(
+          "No stream output produced.",
+          { streamStarted, partialReply: reply },
+        );
       }
 
       await appendStream();
@@ -316,10 +426,11 @@ export default SlackFunction(
         ts: streamTs,
       }) as SlackStreamResponse;
       if (!stopResponse.ok) {
-        throw new Error(
+        throw new StreamingReplyError(
           `Failed to stop Slack stream: ${
             stopResponse.error ?? "unknown_error"
           }`,
+          { streamStarted, partialReply: reply },
         );
       }
 
@@ -447,10 +558,24 @@ export default SlackFunction(
         reply = streamOutcome.reply;
         responseId = streamOutcome.responseId;
       } catch (error) {
+        const streamError = error instanceof StreamingReplyError
+          ? error
+          : undefined;
+        const errorMessage = error instanceof Error
+          ? error.message
+          : String(error);
+        if (streamError?.streamStarted) {
+          console.warn(
+            `Streaming mode failed after stream started. Skipping fallback to avoid duplicate replies. Error: ${errorMessage}`,
+          );
+          return {
+            outputs: {
+              reply: streamError.partialReply,
+            },
+          };
+        }
         console.warn(
-          `Streaming mode failed. Falling back to non-streaming mode. Error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Streaming mode failed before stream start. Falling back to non-streaming mode. Error: ${errorMessage}`,
         );
         const nonStreamingOutcome = await runNonStreaming({
           threadTs: replyInThread ? threadTs : undefined,
