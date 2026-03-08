@@ -136,8 +136,6 @@ const toThreadTs = (
 
 const CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS = 160;
 const CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS = 800;
-const STREAM_MIN_APPEND_CHARS = 120;
-const STREAM_MIN_UPDATE_INTERVAL_MS = 1_000;
 
 const shouldFlushChannelPseudoStream = (
   pendingChars: number,
@@ -145,14 +143,6 @@ const shouldFlushChannelPseudoStream = (
 ): boolean => {
   return pendingChars >= CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS ||
     elapsedMs >= CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS;
-};
-
-const shouldFlushSlackStream = (
-  pendingChars: number,
-  elapsedMs: number,
-): boolean => {
-  return pendingChars >= STREAM_MIN_APPEND_CHARS ||
-    elapsedMs >= STREAM_MIN_UPDATE_INTERVAL_MS;
 };
 
 const normalizeEventType = (
@@ -184,7 +174,6 @@ export const streamReplyInternals = {
   getPreviousResponseId,
   toThreadTs,
   shouldFlushChannelPseudoStream,
-  shouldFlushSlackStream,
   normalizeEventType,
   shouldHandleEventType,
   hasAnyMentionToken,
@@ -375,14 +364,11 @@ export default SlackFunction(
       let streamTs: string | undefined;
       let streamStarted = false;
       let pending = "";
-      let pendingChars = 0;
-      let lastStreamAppendAt = Date.now();
 
       const appendStream = async () => {
         if (!streamTs || pending.length === 0) return;
         const text = pending;
         pending = "";
-        pendingChars = 0;
         const appendResponse = await client.apiCall("chat.appendStream", {
           channel: inputs.channelId,
           ts: streamTs,
@@ -396,7 +382,6 @@ export default SlackFunction(
             { streamStarted, partialReply: reply },
           );
         }
-        lastStreamAppendAt = Date.now();
       };
 
       for await (const chunk of streamResult.textStream) {
@@ -419,18 +404,11 @@ export default SlackFunction(
           }
           streamTs = startResponse.ts;
           streamStarted = true;
-          lastStreamAppendAt = Date.now();
           continue;
         }
 
         pending += chunk;
-        pendingChars += chunk.length;
-        const now = Date.now();
-        const elapsedMs = now - lastStreamAppendAt;
-        if (!shouldFlushSlackStream(pendingChars, elapsedMs)) {
-          continue;
-        }
-        if (pending.length > 0) {
+        if (pending.length >= 160) {
           await appendStream();
         }
       }

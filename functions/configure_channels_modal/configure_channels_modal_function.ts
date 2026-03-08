@@ -261,8 +261,13 @@ const makeThreadFollowupTriggerConfig = (
   channelId: string,
 ): ValidTriggerTypes<
   typeof ReplyWorkflow.definition
-> => (
-  {
+> => {
+  // Build filter statements from TriggerContextData constants to avoid
+  // hard-coded placeholder strings.
+  // Example value: "{{data.thread_ts}}"
+  const threadTs = TriggerContextData.Event.MessagePosted.thread_ts;
+  const userId = TriggerContextData.Event.MessagePosted.user_id;
+  return {
     type: "event",
     name: "thread follow-up trigger",
     workflow: `#/workflows/${ReplyWorkflow.definition.callback_id}`,
@@ -296,7 +301,7 @@ const makeThreadFollowupTriggerConfig = (
               operator: "NOT",
               inputs: [
                 {
-                  statement: "{{data.thread_ts}} == null",
+                  statement: `${threadTs} == null`,
                 },
               ],
             },
@@ -304,7 +309,7 @@ const makeThreadFollowupTriggerConfig = (
               operator: "NOT",
               inputs: [
                 {
-                  statement: "{{data.user_id}} == null",
+                  statement: `${userId} == null`,
                 },
               ],
             },
@@ -312,5 +317,5 @@ const makeThreadFollowupTriggerConfig = (
         },
       },
     },
-  }
-);
+  };
+};

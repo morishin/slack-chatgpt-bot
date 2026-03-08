@@ -59,14 +59,6 @@ Deno.test("shouldFlushChannelPseudoStream returns true on elapsed time", () => {
   assert(streamReplyInternals.shouldFlushChannelPseudoStream(1, 800));
 });
 
-Deno.test("shouldFlushSlackStream returns true on pending size", () => {
-  assert(streamReplyInternals.shouldFlushSlackStream(120, 0));
-});
-
-Deno.test("shouldFlushSlackStream returns true on elapsed time", () => {
-  assert(streamReplyInternals.shouldFlushSlackStream(1, 1_000));
-});
-
 Deno.test("shouldHandleEventType returns false for message_posted when channel mode", () => {
   assertEquals(
     streamReplyInternals.shouldHandleEventType("message_posted", false),
