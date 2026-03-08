@@ -62,9 +62,14 @@ type OpenAIResponsesRequestInput = {
   prompt: string;
   instructions: string;
   previousResponseId?: string;
+  tools?: OpenAIResponseTool[];
 };
 
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses";
+
+type OpenAIResponseTool = {
+  type: "web_search" | "code_interpreter";
+};
 
 class StreamingReplyError extends Error {
   streamStarted: boolean;
@@ -162,6 +167,33 @@ const extractResponseText = (payload: unknown): string => {
   return textParts.join("");
 };
 
+const extractToolCallTypes = (payload: unknown): string[] => {
+  if (!isRecord(payload)) return [];
+  const output = payload["output"];
+  if (!Array.isArray(output)) return [];
+
+  const toolTypes = new Set<string>();
+  for (const item of output) {
+    if (!isRecord(item)) continue;
+    const itemType = getStringField(item, "type");
+    if (itemType && itemType.endsWith("_call")) {
+      toolTypes.add(itemType);
+    }
+  }
+  return [...toolTypes];
+};
+
+const getConfiguredOpenAITools = (): OpenAIResponseTool[] => {
+  const tools: OpenAIResponseTool[] = [];
+  if (env.OPENAI_ENABLE_WEB_SEARCH) {
+    tools.push({ type: "web_search" });
+  }
+  if (env.OPENAI_ENABLE_CODE_INTERPRETER) {
+    tools.push({ type: "code_interpreter" });
+  }
+  return tools;
+};
+
 const buildOpenAIResponsesRequestBody = (
   input: OpenAIResponsesRequestInput,
   stream: boolean,
@@ -173,6 +205,7 @@ const buildOpenAIResponsesRequestBody = (
     ...(input.previousResponseId
       ? { previous_response_id: input.previousResponseId }
       : {}),
+    ...(input.tools && input.tools.length > 0 ? { tools: input.tools } : {}),
     ...(stream ? { stream: true } : {}),
   };
 };
@@ -206,7 +239,7 @@ const requestOpenAIResponses = async (
 
 const generateOpenAIResponse = async (
   input: OpenAIResponsesRequestInput,
-): Promise<{ reply: string; responseId?: string }> => {
+): Promise<{ reply: string; responseId?: string; toolCallTypes: string[] }> => {
   const response = await requestOpenAIResponses(input, false);
   const payload = await response.json() as OpenAIResponsesApiResponse;
   const reply = extractResponseText(payload);
@@ -216,13 +249,14 @@ const generateOpenAIResponse = async (
   return {
     reply,
     responseId: extractResponseId(payload),
+    toolCallTypes: extractToolCallTypes(payload),
   };
 };
 
 const streamOpenAIResponse = async (
   input: OpenAIResponsesRequestInput,
   onDelta: (delta: string) => Promise<void> | void,
-): Promise<{ reply: string; responseId?: string }> => {
+): Promise<{ reply: string; responseId?: string; toolCallTypes: string[] }> => {
   const response = await requestOpenAIResponses(input, true);
   if (!response.body) {
     throw new Error("OpenAI Responses API stream body is missing.");
@@ -232,6 +266,7 @@ const streamOpenAIResponse = async (
   let buffer = "";
   let reply = "";
   let responseId: string | undefined;
+  const toolCallTypes = new Set<string>();
 
   const processEventData = async (data: string) => {
     if (data.length === 0 || data === "[DONE]") {
@@ -268,6 +303,20 @@ const streamOpenAIResponse = async (
           reply = completedText;
           await onDelta(completedText);
         }
+      }
+      for (const toolCallType of extractToolCallTypes(responsePayload)) {
+        toolCallTypes.add(toolCallType);
+      }
+      return;
+    }
+
+    if (type && type.includes("_call")) {
+      const normalizedType = type.replace(/^response\./, "").replace(
+        /\.(in_progress|completed|delta)$/,
+        "",
+      );
+      if (normalizedType.endsWith("_call")) {
+        toolCallTypes.add(normalizedType);
       }
       return;
     }
@@ -320,7 +369,7 @@ const streamOpenAIResponse = async (
     throw new Error("OpenAI Responses API stream returned no output text.");
   }
 
-  return { reply, responseId };
+  return { reply, responseId, toolCallTypes: [...toolCallTypes] };
 };
 
 const toThreadTs = (
@@ -487,14 +536,22 @@ export default SlackFunction(
       model: env.GPT_MODEL,
       prompt: content,
       instructions: systemMessage,
+      tools: getConfiguredOpenAITools(),
       ...(previousResponseId ? { previousResponseId } : {}),
     };
+    console.log(
+      `Configured OpenAI tools: ${
+        openAIRequestInput.tools?.map((tool) => tool.type).join(", ") ??
+          "none"
+      }`,
+    );
 
     const runNonStreaming = async (
       options?: { threadTs?: string },
     ): Promise<{
       reply: string;
       responseId?: string;
+      toolCallTypes: string[];
     }> => {
       console.log("Slack reply mode: non-streaming");
       let result;
@@ -517,7 +574,7 @@ export default SlackFunction(
         } catch (_postError) {
           // Ignore Slack posting errors in fallback path.
         }
-        return { reply };
+        return { reply, toolCallTypes: [] };
       }
 
       const reply = result.reply;
@@ -537,6 +594,7 @@ export default SlackFunction(
       return {
         reply,
         responseId: result.responseId,
+        toolCallTypes: result.toolCallTypes,
       };
     };
 
@@ -552,6 +610,7 @@ export default SlackFunction(
     const runStreaming = async (): Promise<{
       reply: string;
       responseId?: string;
+      toolCallTypes: string[];
     }> => {
       console.log("Slack reply mode: streaming");
 
@@ -635,12 +694,14 @@ export default SlackFunction(
       return {
         reply: streamResult.reply,
         responseId: streamResult.responseId,
+        toolCallTypes: streamResult.toolCallTypes,
       };
     };
 
     const runChannelPseudoStreaming = async (): Promise<{
       reply: string;
       responseId?: string;
+      toolCallTypes: string[];
     }> => {
       console.log("Slack reply mode: pseudo-streaming in channel");
 
@@ -717,6 +778,7 @@ export default SlackFunction(
         return {
           reply: streamResult.reply,
           responseId: streamResult.responseId,
+          toolCallTypes: streamResult.toolCallTypes,
         };
       } catch (error) {
         console.warn(
@@ -733,18 +795,20 @@ export default SlackFunction(
         } catch (_fallbackSlackError) {
           // Ignore fallback posting errors and return a safe reply string.
         }
-        return { reply: fallbackReply };
+        return { reply: fallbackReply, toolCallTypes: [] };
       }
     };
 
     let reply: string;
     let responseId: string | undefined;
+    let toolCallTypes: string[] = [];
 
     if (canStream) {
       try {
         const streamOutcome = await runStreaming();
         reply = streamOutcome.reply;
         responseId = streamOutcome.responseId;
+        toolCallTypes = streamOutcome.toolCallTypes;
       } catch (error) {
         const streamError = error instanceof StreamingReplyError
           ? error
@@ -770,11 +834,13 @@ export default SlackFunction(
         });
         reply = nonStreamingOutcome.reply;
         responseId = nonStreamingOutcome.responseId;
+        toolCallTypes = nonStreamingOutcome.toolCallTypes;
       }
     } else if (!replyInThread) {
       const pseudoStreamingOutcome = await runChannelPseudoStreaming();
       reply = pseudoStreamingOutcome.reply;
       responseId = pseudoStreamingOutcome.responseId;
+      toolCallTypes = pseudoStreamingOutcome.toolCallTypes;
     } else {
       if (!streamTeamId) {
         console.log("Streaming disabled: SLACK_TEAM_ID is not configured.");
@@ -786,6 +852,11 @@ export default SlackFunction(
       });
       reply = nonStreamingOutcome.reply;
       responseId = nonStreamingOutcome.responseId;
+      toolCallTypes = nonStreamingOutcome.toolCallTypes;
+    }
+
+    if (toolCallTypes.length > 0) {
+      console.log(`OpenAI tools used: ${toolCallTypes.join(", ")}`);
     }
 
     if (!responseId) {
