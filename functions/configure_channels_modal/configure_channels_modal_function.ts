@@ -1,5 +1,8 @@
 import { EventTriggerResponseObject } from "deno-slack-api/typed-method-types/workflows/triggers/event.ts";
-import { ValidTriggerTypes } from "deno-slack-api/typed-method-types/workflows/triggers/mod.ts";
+import {
+  TriggerContextData,
+  ValidTriggerTypes,
+} from "deno-slack-api/typed-method-types/workflows/triggers/mod.ts";
 import { TriggerEventTypes } from "deno-slack-api/typed-method-types/workflows/triggers/trigger-event-types.ts";
 import { SlackAPIClient } from "deno-slack-api/types.ts";
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
@@ -47,16 +50,15 @@ export default SlackFunction(
     );
     if (obsoleteTriggers.length > 0) {
       console.log(`${obsoleteTriggers.length} obsolete triggers found`);
-      await deleteTrigger(client, obsoleteTriggers[0].id);
-      console.log(`💥 Triggers removed: ${obsoleteTriggers[0].id}`);
+      await Promise.all(
+        obsoleteTriggers.map((trigger) => deleteTrigger(client, trigger.id)),
+      );
+      console.log(
+        `💥 Obsolete triggers removed: ${
+          JSON.stringify(obsoleteTriggers.map((trigger) => trigger.id))
+        }`,
+      );
     }
-
-    const existingChannelIds: string[] = triggers.flatMap((trigger) =>
-      trigger.channel_ids
-    ).filter((existingChannelId) =>
-      !obsoleteTriggers.flatMap((obsolteTrigger) => obsolteTrigger.channel_ids)
-        .includes(existingChannelId)
-    );
 
     const inputChannelIds = view.state.values.channels_block.channel
       .selected_channels as string[];
@@ -64,45 +66,19 @@ export default SlackFunction(
       return { error: "Please select at least one channel" };
     }
 
-    const addedChannelIds = inputChannelIds.filter((channelId) =>
-      !existingChannelIds.includes(channelId)
+    const singleChannelTriggers = triggers.filter((trigger) =>
+      trigger.channel_ids.length === 1
     );
-    const removedChannelIds = existingChannelIds.filter((channelId) =>
-      !inputChannelIds.includes(channelId)
-    );
-
-    if (addedChannelIds.length > 0) {
-      const createResponse = await Promise.all(
-        addedChannelIds.map((channelId) =>
-          createMentionTrigger(client, channelId)
-        ),
-      );
-      console.log(
-        `✅ New triggers created: ${
-          JSON.stringify(
-            createResponse.map((res) => ({
-              id: res.trigger?.id,
-              channel_ids: res.trigger?.channel_ids,
-            })),
-            null,
-            2,
-          )
-        }`,
-      );
-    }
-
-    if (removedChannelIds.length > 0) {
-      const triggersToBeRemoved = triggers.filter((trigger) =>
-        trigger.channel_ids.length === 1 &&
-        removedChannelIds.includes(trigger.channel_ids[0])
-      );
+    if (singleChannelTriggers.length > 0) {
       await Promise.all(
-        triggersToBeRemoved.map((trigger) => deleteTrigger(client, trigger.id)),
+        singleChannelTriggers.map((trigger) =>
+          deleteTrigger(client, trigger.id)
+        ),
       );
       console.log(
         `💥 Triggers removed: ${
           JSON.stringify(
-            triggersToBeRemoved.map((trigger) => ({
+            singleChannelTriggers.map((trigger) => ({
               id: trigger.id,
               channel_ids: trigger.channel_ids,
             })),
@@ -112,6 +88,24 @@ export default SlackFunction(
         }`,
       );
     }
+
+    const createResponse = await Promise.all(
+      inputChannelIds.map((channelId) =>
+        createMentionTrigger(client, channelId)
+      ),
+    );
+    console.log(
+      `✅ New triggers created: ${
+        JSON.stringify(
+          createResponse.map((res) => ({
+            id: res.trigger?.id,
+            channel_ids: res.trigger?.channel_ids,
+          })),
+          null,
+          2,
+        )
+      }`,
+    );
 
     return {
       response_action: "update",
@@ -219,10 +213,16 @@ const makeMentionTriggerConfig = (channelId: string): ValidTriggerTypes<
     workflow: `#/workflows/${ReplyWorkflow.definition.callback_id}`,
     inputs: {
       channelId: {
-        value: "{{data.channel_id}}",
+        value: TriggerContextData.Event.AppMentioned.channel_id,
       },
       message: {
-        value: "{{data.text}}",
+        value: TriggerContextData.Event.AppMentioned.text,
+      },
+      userId: {
+        value: TriggerContextData.Event.AppMentioned.user_id,
+      },
+      messageTs: {
+        value: TriggerContextData.Event.AppMentioned.message_ts,
       },
     },
     event: {

@@ -1,6 +1,6 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { env } from "../../env.ts";
-import { MessageHistoryDatastore } from "../../datastores/message_history_datastore.ts";
+import { ConversationSessionDatastore } from "../../datastores/conversation_session_datastore.ts";
 
 export const ConfigureSystemMessageModalFunctionDefinition = DefineFunction({
   callback_id: "configure_system_message_modal_function",
@@ -30,7 +30,7 @@ export default SlackFunction(
   ConfigureSystemMessageModalFunctionDefinition,
   async ({ inputs, client }) => {
     const getResponse = await client.apps.datastore.get<
-      typeof MessageHistoryDatastore.definition
+      typeof ConversationSessionDatastore.definition
     >({
       datastore: "MessageHistory",
       id: inputs.channelId,
@@ -42,12 +42,16 @@ export default SlackFunction(
     }
 
     const systemMessage: string | undefined = getResponse.item.systemMessage;
+    const replyInThread = (getResponse.item.replyInThread as
+      | boolean
+      | undefined) ?? false;
 
     const response = await client.views.open({
       interactivity_pointer: inputs.interactivityPointer,
       view: buildModalView(
         inputs.channelId,
         systemMessage ?? env.INITIAL_SYSTEM_MESSAGE,
+        replyInThread,
       ),
     });
     if (!response.ok) {
@@ -64,14 +68,18 @@ export default SlackFunction(
       .selected_channel as string;
     const systemMessage = view.state.values.system_message_block
       .system_message.value as string;
+    const replyMode = view.state.values.reply_mode_block.reply_mode
+      .selected_option?.value as string | undefined;
+    const replyInThread = replyMode === "thread";
 
     const updateResponse = await client.apps.datastore.update<
-      typeof MessageHistoryDatastore.definition
+      typeof ConversationSessionDatastore.definition
     >({
       datastore: "MessageHistory",
       item: {
         channelId,
         systemMessage,
+        replyInThread,
       },
     });
 
@@ -81,7 +89,9 @@ export default SlackFunction(
       return { error };
     } else {
       console.log(
-        `MessageHistory saved: ${JSON.stringify(updateResponse.item, null, 2)}`,
+        `ConversationSession saved: ${
+          JSON.stringify(updateResponse.item, null, 2)
+        }`,
       );
       return {
         response_action: "update",
@@ -111,7 +121,11 @@ export default SlackFunction(
   () => ({ outputs: {}, completed: true }),
 );
 
-const buildModalView = (channelId: string, systemMessage: string) => ({
+const buildModalView = (
+  channelId: string,
+  systemMessage: string,
+  replyInThread: boolean,
+) => ({
   type: "modal",
   callback_id: "configure_system_message_modal_view",
   title: {
@@ -156,6 +170,45 @@ const buildModalView = (channelId: string, systemMessage: string) => ({
       label: {
         type: "plain_text",
         text: "A system message to be sent to ChatGPT API",
+      },
+    },
+    {
+      type: "input",
+      block_id: "reply_mode_block",
+      element: {
+        type: "static_select",
+        action_id: "reply_mode",
+        placeholder: {
+          type: "plain_text",
+          text: "Select reply mode",
+        },
+        options: [
+          {
+            text: {
+              type: "plain_text",
+              text: "Thread reply",
+            },
+            value: "thread",
+          },
+          {
+            text: {
+              type: "plain_text",
+              text: "Channel reply",
+            },
+            value: "channel",
+          },
+        ],
+        initial_option: {
+          text: {
+            type: "plain_text",
+            text: replyInThread ? "Thread reply" : "Channel reply",
+          },
+          value: replyInThread ? "thread" : "channel",
+        },
+      },
+      label: {
+        type: "plain_text",
+        text: "Reply mode",
       },
     },
   ],
