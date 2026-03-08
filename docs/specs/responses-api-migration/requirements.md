@@ -28,9 +28,13 @@ If elapsed time from the last interaction exceeds a configurable threshold
 (`RESPONSE_CHAIN_TIMEOUT_MINUTES`), the bot must start a new chain without
 `previous_response_id`.
 
-### FR-4: Non-Streaming Slack Reply
+### FR-4: Slack Reply Mode By Channel Setting
 
-The bot must post replies via `chat.postMessage` (non-streaming).
+The bot must select reply behavior by channel setting:
+
+- `replyInThread=true`: reply in thread using Slack stream APIs
+- `replyInThread=false`: reply in channel using pseudo-streaming
+  (`chat.postMessage` + `chat.update`)
 
 ### FR-5: System Message Preservation
 
@@ -50,8 +54,8 @@ Session scope must be channel-based and keyed by `channelId`.
 ### FR-8: Thread Follow-up Without Mention
 
 When `replyInThread` is enabled for a channel, the bot must respond to
-`message_posted` events in that channel's threads even when the message does
-not mention the bot.
+`message_posted` events in that channel's threads even when the message does not
+mention the bot.
 
 ### FR-9: Event-Type-Aware Reply Gate
 
