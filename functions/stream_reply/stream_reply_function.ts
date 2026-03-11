@@ -446,6 +446,17 @@ const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 const hasSpecificMentionToken = (text: string, userId: string): boolean =>
   text.includes(`<@${userId}>`);
 
+const threadHasSpecificMentionToken = (
+  messages: Array<{ text?: string }> | undefined,
+  userId: string,
+): boolean => {
+  if (!messages) return false;
+  return messages.some((message) =>
+    typeof message.text === "string" &&
+    hasSpecificMentionToken(message.text, userId)
+  );
+};
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
@@ -457,6 +468,7 @@ export const streamReplyInternals = {
   shouldHandleEventType,
   hasAnyMentionToken,
   hasSpecificMentionToken,
+  threadHasSpecificMentionToken,
 };
 
 export default SlackFunction(
@@ -566,17 +578,18 @@ export default SlackFunction(
         };
       }
 
-      // Only continue thread follow-up if the thread root explicitly mentions this bot.
+      // Only continue thread follow-up if any earlier message in this thread
+      // explicitly mentions this bot.
       const repliesResponse = await client.conversations.replies({
         channel: inputs.channelId,
         ts: threadTs,
         oldest: threadTs,
         inclusive: true,
-        limit: 1,
+        limit: 200,
       }) as SlackConversationRepliesResponse;
       if (!repliesResponse.ok) {
         console.log(
-          `Skipping: StreamReplyFunction (failed to fetch thread root: ${repliesResponse.error ?? "unknown_error"})`,
+          `Skipping: StreamReplyFunction (failed to fetch thread messages: ${repliesResponse.error ?? "unknown_error"})`,
         );
         return {
           outputs: {
@@ -585,10 +598,9 @@ export default SlackFunction(
         };
       }
 
-      const rootText = repliesResponse.messages?.[0]?.text ?? "";
-      if (!hasSpecificMentionToken(rootText, botUserId)) {
+      if (!threadHasSpecificMentionToken(repliesResponse.messages, botUserId)) {
         console.log(
-          "Skipping: StreamReplyFunction (thread root is not bot-mention initiated)",
+          "Skipping: StreamReplyFunction (thread has no bot mention history)",
         );
         return {
           outputs: {

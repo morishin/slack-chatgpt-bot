@@ -102,6 +102,26 @@ Deno.test("hasSpecificMentionToken detects target bot mention only", () => {
   );
 });
 
+Deno.test("threadHasSpecificMentionToken detects mention anywhere in thread", () => {
+  assertEquals(
+    streamReplyInternals.threadHasSpecificMentionToken(
+      [
+        { text: "hello" },
+        { text: "<@U123ABC45> can you help?" },
+      ],
+      "U123ABC45",
+    ),
+    true,
+  );
+  assertEquals(
+    streamReplyInternals.threadHasSpecificMentionToken(
+      [{ text: "hello" }, { text: "no mention" }],
+      "U123ABC45",
+    ),
+    false,
+  );
+});
+
 Deno.test("extractResponseText reads output_text field", () => {
   const text = streamReplyInternals.extractResponseText({
     output_text: "hello from output_text",
