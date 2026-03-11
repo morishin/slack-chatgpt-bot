@@ -49,6 +49,11 @@ type SlackMessageResponse = {
   ts?: string;
 };
 
+type SlackEphemeralResponse = {
+  ok: boolean;
+  error?: string;
+};
+
 type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
@@ -92,6 +97,27 @@ class StreamingReplyError extends Error {
     this.partialReply = options?.partialReply ?? "";
   }
 }
+
+class FunctionTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FunctionTimeoutError";
+  }
+}
+
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof Error && error.name === "AbortError") {
+    return true;
+  }
+  if (
+    typeof DOMException !== "undefined" &&
+    error instanceof DOMException &&
+    error.name === "AbortError"
+  ) {
+    return true;
+  }
+  return false;
+};
 
 const trimMention = (message: string): string => {
   return message.replace(/<@.+>\s?/, "").trim();
@@ -223,6 +249,7 @@ const buildOpenAIResponsesRequestBody = (
 const requestOpenAIResponses = async (
   input: OpenAIResponsesRequestInput,
   stream: boolean,
+  abortSignal?: AbortSignal,
 ): Promise<Response> => {
   const response = await fetch(OPENAI_RESPONSES_API_URL, {
     method: "POST",
@@ -232,6 +259,7 @@ const requestOpenAIResponses = async (
       ...(stream ? { "Accept": "text/event-stream" } : {}),
     },
     body: JSON.stringify(buildOpenAIResponsesRequestBody(input, stream)),
+    signal: abortSignal,
   });
 
   if (response.ok) {
@@ -249,8 +277,9 @@ const requestOpenAIResponses = async (
 
 const generateOpenAIResponse = async (
   input: OpenAIResponsesRequestInput,
+  abortSignal?: AbortSignal,
 ): Promise<{ reply: string; responseId?: string; toolCallTypes: string[] }> => {
-  const response = await requestOpenAIResponses(input, false);
+  const response = await requestOpenAIResponses(input, false, abortSignal);
   const payload = await response.json() as OpenAIResponsesApiResponse;
   const reply = extractResponseText(payload);
   if (reply.length === 0) {
@@ -266,8 +295,9 @@ const generateOpenAIResponse = async (
 const streamOpenAIResponse = async (
   input: OpenAIResponsesRequestInput,
   onDelta: (delta: string) => Promise<void> | void,
+  abortSignal?: AbortSignal,
 ): Promise<{ reply: string; responseId?: string; toolCallTypes: string[] }> => {
-  const response = await requestOpenAIResponses(input, true);
+  const response = await requestOpenAIResponses(input, true, abortSignal);
   if (!response.body) {
     throw new Error("OpenAI Responses API stream body is missing.");
   }
@@ -402,6 +432,7 @@ const toThreadTs = (
 
 const CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS = 160;
 const CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS = 800;
+const RECENT_MENTION_THREAD_TS_LIMIT = 10;
 
 const shouldFlushChannelPseudoStream = (
   pendingChars: number,
@@ -435,6 +466,36 @@ const shouldHandleEventType = (
 
 const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 
+const hasSpecificMentionToken = (text: string, userId: string): boolean =>
+  text.includes(`<@${userId}>`);
+
+const normalizeMentionThreadTsHistory = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string =>
+    typeof entry === "string" && /^\d+\.\d+$/.test(entry)
+  );
+};
+
+const prependMentionThreadTs = (
+  history: string[],
+  threadTs: string,
+): boolean => {
+  return history.length > 0 && history[0] === threadTs;
+};
+
+const updateMentionThreadTsHistory = (
+  history: string[],
+  threadTs: string,
+): string[] => {
+  if (prependMentionThreadTs(history, threadTs)) {
+    return history;
+  }
+  return [
+    threadTs,
+    ...history.filter((existingThreadTs) => existingThreadTs !== threadTs),
+  ].slice(0, RECENT_MENTION_THREAD_TS_LIMIT);
+};
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
@@ -445,80 +506,70 @@ export const streamReplyInternals = {
   normalizeEventType,
   shouldHandleEventType,
   hasAnyMentionToken,
+  hasSpecificMentionToken,
+  normalizeMentionThreadTsHistory,
+  updateMentionThreadTsHistory,
 };
 
 export default SlackFunction(
   StreamReplyFunctionDefinition,
   async ({ inputs, client, env: slackEnv }) => {
-    const eventType = typeof inputs.eventType === "string"
-      ? inputs.eventType
-      : undefined;
-    const normalizedEventType = normalizeEventType(eventType);
-
-    const content = trimMention(inputs.systemMessage);
-    if (isBlank(content)) {
-      console.log(
-        `Skipping: StreamReplyFunction (empty message, eventType=${
-          normalizedEventType ?? "unknown"
-        }, userId=${inputs.userId ?? "unknown"})`,
-      );
-      return {
-        outputs: {
-          reply: "",
-        },
-      };
-    }
-
-    const timeoutMs = getChainTimeoutMs(env.RESPONSE_CHAIN_TIMEOUT_MINUTES);
-    const sessionChannelId = inputs.channelId;
-
-    const sessionResponse = await client.apps.datastore.get<
-      typeof ConversationSessionDatastore.definition
-    >({
-      datastore: "MessageHistory",
-      id: sessionChannelId,
+    const timeoutAlertDelayMs = env.FUNCTION_TIMEOUT_ALERT_MS;
+    console.log(
+      `StreamReplyFunction timeout guard configured: ${timeoutAlertDelayMs}ms`,
+    );
+    const timeoutAbortController = new AbortController();
+    let isFunctionTimedOut = false;
+    const timeoutErrorMessage =
+      `Function soft-timeout reached at ${timeoutAlertDelayMs}ms`;
+    let rejectTimeoutPromise: ((reason?: unknown) => void) | undefined;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      rejectTimeoutPromise = reject;
     });
-    if (!sessionResponse.ok) {
-      return {
-        error: `Failed to get conversation session: ${sessionResponse.error}`,
-      };
-    }
+    const timeoutAlertTargetUserId = typeof inputs.userId === "string"
+      ? inputs.userId
+      : undefined;
+    const timeoutAlertTimerId = setTimeout(() => {
+      isFunctionTimedOut = true;
+      console.warn(`StreamReplyFunction timeout fired: ${timeoutErrorMessage}`);
+      timeoutAbortController.abort();
+      rejectTimeoutPromise?.(new FunctionTimeoutError(timeoutErrorMessage));
+      if (!timeoutAlertTargetUserId) return;
+      void (async () => {
+        const response = await client.chat.postEphemeral({
+          channel: inputs.channelId,
+          user: timeoutAlertTargetUserId,
+          text:
+            "The AI response exceeded Slack Function's 60-second execution limit.",
+        }) as SlackEphemeralResponse;
+        if (!response.ok) {
+          console.warn(
+            `Failed to post timeout alert message: ${
+              response.error ?? "unknown_error"
+            }`,
+          );
+        }
+      })();
+    }, timeoutAlertDelayMs);
 
-    const nowMs = Date.now();
-    const systemMessage = sessionResponse.item?.systemMessage as
-      | string
-      | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
-    const replyInThread = (sessionResponse.item?.replyInThread as
-      | boolean
-      | undefined) ?? false;
-    if (!shouldHandleEventType(eventType, replyInThread)) {
-      console.log(
-        `Skipping: StreamReplyFunction (eventType=${eventType}, replyInThread=${replyInThread})`,
-      );
-      return {
-        outputs: {
-          reply: "",
-        },
-      };
-    }
-    if (
-      normalizedEventType === "message_posted" &&
-      hasAnyMentionToken(inputs.systemMessage)
-    ) {
-      console.log(
-        "Skipping: StreamReplyFunction (message_posted with mention text)",
-      );
-      return {
-        outputs: {
-          reply: "",
-        },
-      };
-    }
-    if (normalizedEventType === "message_posted" && inputs.userId) {
-      const authTestResponse = await client.auth.test();
-      if (authTestResponse.ok && authTestResponse.user_id === inputs.userId) {
+    const throwIfTimedOut = () => {
+      if (isFunctionTimedOut) {
+        throw new FunctionTimeoutError(timeoutErrorMessage);
+      }
+    };
+
+    const execute = async () => {
+      const eventType = typeof inputs.eventType === "string"
+        ? inputs.eventType
+        : undefined;
+      const normalizedEventType = normalizeEventType(eventType);
+
+      const content = trimMention(inputs.systemMessage);
+      if (isBlank(content)) {
         console.log(
-          "Skipping: StreamReplyFunction (message_posted from bot user)",
+          `Skipping: StreamReplyFunction (empty message, eventType=${
+            normalizedEventType ?? "unknown"
+          }, userId=${inputs.userId ?? "unknown"})`,
         );
         return {
           outputs: {
@@ -526,263 +577,336 @@ export default SlackFunction(
           },
         };
       }
-    }
 
-    const previousResponseId = getPreviousResponseId(
-      {
-        previousResponseId: sessionResponse.item?.previousResponseId as
-          | string
-          | undefined,
-        lastInteractionAt: sessionResponse.item?.lastInteractionAt as
-          | number
-          | undefined,
-      },
-      nowMs,
-      timeoutMs,
-    );
+      const timeoutMs = getChainTimeoutMs(env.RESPONSE_CHAIN_TIMEOUT_MINUTES);
+      const sessionChannelId = inputs.channelId;
 
-    const openAIRequestInput: OpenAIResponsesRequestInput = {
-      apiKey: slackEnv.OPENAI_API_KEY,
-      model: env.GPT_MODEL,
-      prompt: content,
-      instructions: systemMessage,
-      tools: getConfiguredOpenAITools(),
-      ...(previousResponseId ? { previousResponseId } : {}),
-    };
-    console.log(
-      `Configured OpenAI tools: ${
-        openAIRequestInput.tools?.map((tool) => tool.type).join(", ") ??
-          "none"
-      }`,
-    );
+      const sessionResponse = await client.apps.datastore.get<
+        typeof ConversationSessionDatastore.definition
+      >({
+        datastore: "MessageHistory",
+        id: sessionChannelId,
+      });
+      if (!sessionResponse.ok) {
+        return {
+          error: `Failed to get conversation session: ${sessionResponse.error}`,
+        };
+      }
 
-    const runNonStreaming = async (
-      options?: { threadTs?: string },
-    ): Promise<{
-      reply: string;
-      responseId?: string;
-      toolCallTypes: string[];
-    }> => {
-      console.log("Slack reply mode: non-streaming");
-      let result;
-      try {
-        result = await generateOpenAIResponse(openAIRequestInput);
-      } catch (error) {
-        console.warn(
-          `OpenAI reply request failed. Falling back to static message. Error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+      const nowMs = Date.now();
+      const systemMessage = sessionResponse.item?.systemMessage as
+        | string
+        | undefined ?? env.INITIAL_SYSTEM_MESSAGE;
+      const replyInThread = (sessionResponse.item?.replyInThread as
+        | boolean
+        | undefined) ?? false;
+      const currentThreadTs = toThreadTs(
+        inputs.messageTs as string | number | undefined,
+      );
+      let mentionThreadTsHistory = normalizeMentionThreadTsHistory(
+        sessionResponse.item?.mentionThreadTsHistory,
+      );
+      let mentionThreadTsHistoryDirty = false;
+      const markThreadAsMentioned = (threadTs: string) => {
+        const nextHistory = updateMentionThreadTsHistory(
+          mentionThreadTsHistory,
+          threadTs,
         );
-        const reply =
-          "Failed to generate a response. Please try again in a moment.";
+        if (
+          nextHistory.length !== mentionThreadTsHistory.length ||
+          nextHistory.some((entry, index) =>
+            mentionThreadTsHistory[index] !== entry
+          )
+        ) {
+          mentionThreadTsHistory = nextHistory;
+          mentionThreadTsHistoryDirty = true;
+        }
+      };
+      const persistMentionThreadHistory = async (): Promise<
+        string | undefined
+      > => {
+        throwIfTimedOut();
+        if (!mentionThreadTsHistoryDirty) return undefined;
+        const updateResponse = await client.apps.datastore.update<
+          typeof ConversationSessionDatastore.definition
+        >({
+          datastore: "MessageHistory",
+          item: {
+            channelId: sessionChannelId,
+            systemMessage,
+            mentionThreadTsHistory,
+          },
+        });
+        if (!updateResponse.ok) {
+          return `Failed to save mentionThreadTsHistory: ${updateResponse.error}`;
+        }
+        mentionThreadTsHistoryDirty = false;
+        return undefined;
+      };
+      if (!shouldHandleEventType(eventType, replyInThread)) {
+        console.log(
+          `Skipping: StreamReplyFunction (eventType=${eventType}, replyInThread=${replyInThread})`,
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+      if (normalizedEventType === "message_posted") {
+        const authTestResponse = await client.auth.test();
+        const botUserId = authTestResponse.ok
+          ? authTestResponse.user_id
+          : undefined;
+        if (!botUserId) {
+          console.log(
+            `Skipping: StreamReplyFunction (failed auth.test for message_posted: ${
+              authTestResponse.error ?? "unknown_error"
+            })`,
+          );
+          return {
+            outputs: {
+              reply: "",
+            },
+          };
+        }
+        if (botUserId === inputs.userId) {
+          console.log(
+            "Skipping: StreamReplyFunction (message_posted from bot user)",
+          );
+          return {
+            outputs: {
+              reply: "",
+            },
+          };
+        }
+
+        if (!currentThreadTs) {
+          console.log(
+            "Skipping: StreamReplyFunction (message_posted without valid thread ts)",
+          );
+          return {
+            outputs: {
+              reply: "",
+            },
+          };
+        }
+
+        if (hasSpecificMentionToken(inputs.systemMessage, botUserId)) {
+          markThreadAsMentioned(currentThreadTs);
+          const persistError = await persistMentionThreadHistory();
+          if (persistError) {
+            return { error: persistError };
+          }
+          console.log(
+            "Skipping: StreamReplyFunction (message_posted with bot mention text)",
+          );
+          return {
+            outputs: {
+              reply: "",
+            },
+          };
+        }
+
+        if (!mentionThreadTsHistory.includes(currentThreadTs)) {
+          console.log(
+            "Skipping: StreamReplyFunction (thread is not in mentionThreadTsHistory)",
+          );
+          return {
+            outputs: {
+              reply: "",
+            },
+          };
+        }
+      }
+
+      if (normalizedEventType === "app_mentioned" && currentThreadTs) {
+        markThreadAsMentioned(currentThreadTs);
+      }
+
+      const previousResponseId = getPreviousResponseId(
+        {
+          previousResponseId: sessionResponse.item?.previousResponseId as
+            | string
+            | undefined,
+          lastInteractionAt: sessionResponse.item?.lastInteractionAt as
+            | number
+            | undefined,
+        },
+        nowMs,
+        timeoutMs,
+      );
+
+      const openAIRequestInput: OpenAIResponsesRequestInput = {
+        apiKey: slackEnv.OPENAI_API_KEY,
+        model: env.GPT_MODEL,
+        prompt: content,
+        instructions: systemMessage,
+        tools: getConfiguredOpenAITools(),
+        ...(previousResponseId ? { previousResponseId } : {}),
+      };
+      console.log(
+        `Configured OpenAI tools: ${
+          openAIRequestInput.tools?.map((tool) => tool.type).join(", ") ??
+            "none"
+        }`,
+      );
+
+      const runNonStreaming = async (
+        options?: { threadTs?: string },
+      ): Promise<{
+        reply: string;
+        responseId?: string;
+        toolCallTypes: string[];
+      }> => {
+        console.log("Slack reply mode: non-streaming");
+        let result;
         try {
+          throwIfTimedOut();
+          result = await generateOpenAIResponse(
+            openAIRequestInput,
+            timeoutAbortController.signal,
+          );
+        } catch (error) {
+          if (isFunctionTimedOut || isAbortError(error)) {
+            throw new FunctionTimeoutError(timeoutErrorMessage);
+          }
+          console.warn(
+            `OpenAI reply request failed. Falling back to static message. Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          const reply =
+            "Failed to generate a response. Please try again in a moment.";
+          try {
+            throwIfTimedOut();
+            await client.chat.postMessage({
+              channel: inputs.channelId,
+              ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
+              text: reply,
+            });
+          } catch (_postError) {
+            // Ignore Slack posting errors in fallback path.
+          }
+          return { reply, toolCallTypes: [] };
+        }
+
+        const reply = result.reply;
+        try {
+          throwIfTimedOut();
           await client.chat.postMessage({
             channel: inputs.channelId,
             ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
             text: reply,
           });
-        } catch (_postError) {
-          // Ignore Slack posting errors in fallback path.
-        }
-        return { reply, toolCallTypes: [] };
-      }
-
-      const reply = result.reply;
-      try {
-        await client.chat.postMessage({
-          channel: inputs.channelId,
-          ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
-          text: reply,
-        });
-      } catch (error) {
-        console.warn(
-          `Failed to post non-streaming Slack message: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-      return {
-        reply,
-        responseId: result.responseId,
-        toolCallTypes: result.toolCallTypes,
-      };
-    };
-
-    const streamTeamId = env.SLACK_TEAM_ID?.trim();
-    const threadTs = toThreadTs(
-      inputs.messageTs as string | number | undefined,
-    );
-    const canStream = Boolean(
-      replyInThread &&
-        streamTeamId && inputs.userId && threadTs,
-    );
-
-    const runStreaming = async (): Promise<{
-      reply: string;
-      responseId?: string;
-      toolCallTypes: string[];
-    }> => {
-      console.log("Slack reply mode: streaming");
-
-      let reply = "";
-      let streamTs: string | undefined;
-      let streamStarted = false;
-      let pending = "";
-
-      const appendStream = async () => {
-        if (!streamTs || pending.length === 0) return;
-        const text = pending;
-        pending = "";
-        const appendResponse = await client.apiCall("chat.appendStream", {
-          channel: inputs.channelId,
-          ts: streamTs,
-          markdown_text: text,
-        }) as SlackStreamResponse;
-        if (!appendResponse.ok) {
-          throw new StreamingReplyError(
-            `Failed to append Slack stream: ${
-              appendResponse.error ?? "unknown_error"
+        } catch (error) {
+          console.warn(
+            `Failed to post non-streaming Slack message: ${
+              error instanceof Error ? error.message : String(error)
             }`,
-            { streamStarted, partialReply: reply },
           );
         }
+        return {
+          reply,
+          responseId: result.responseId,
+          toolCallTypes: result.toolCallTypes,
+        };
       };
 
-      const streamResult = await streamOpenAIResponse(
-        openAIRequestInput,
-        async (chunk) => {
-          reply += chunk;
-          if (!streamTs) {
-            const startResponse = await client.apiCall("chat.startStream", {
-              channel: inputs.channelId,
-              thread_ts: threadTs as string,
-              recipient_user_id: inputs.userId as string,
-              recipient_team_id: streamTeamId as string,
-              markdown_text: chunk,
-            }) as SlackStreamResponse;
-            if (!startResponse.ok || !startResponse.ts) {
-              throw new StreamingReplyError(
-                `Failed to start Slack stream: ${
-                  startResponse.error ?? "unknown_error"
-                }`,
-                { streamStarted, partialReply: reply },
-              );
-            }
-            streamTs = startResponse.ts;
-            streamStarted = true;
-            return;
-          }
-
-          pending += chunk;
-          if (pending.length >= 160) {
-            await appendStream();
-          }
-        },
+      const streamTeamId = env.SLACK_TEAM_ID?.trim();
+      const threadTs = currentThreadTs;
+      const canStream = Boolean(
+        replyInThread &&
+          streamTeamId && inputs.userId && threadTs,
       );
 
-      if (!streamTs) {
-        throw new StreamingReplyError(
-          "No stream output produced.",
-          { streamStarted, partialReply: reply },
-        );
-      }
+      const runStreaming = async (): Promise<{
+        reply: string;
+        responseId?: string;
+        toolCallTypes: string[];
+      }> => {
+        console.log("Slack reply mode: streaming");
 
-      await appendStream();
-      const stopResponse = await client.apiCall("chat.stopStream", {
-        channel: inputs.channelId,
-        ts: streamTs,
-      }) as SlackStreamResponse;
-      if (!stopResponse.ok) {
-        throw new StreamingReplyError(
-          `Failed to stop Slack stream: ${
-            stopResponse.error ?? "unknown_error"
-          }`,
-          { streamStarted, partialReply: reply },
-        );
-      }
+        let reply = "";
+        let streamTs: string | undefined;
+        let streamStarted = false;
+        let pending = "";
 
-      return {
-        reply: streamResult.reply,
-        responseId: streamResult.responseId,
-        toolCallTypes: streamResult.toolCallTypes,
-      };
-    };
+        const appendStream = async () => {
+          throwIfTimedOut();
+          if (!streamTs || pending.length === 0) return;
+          const text = pending;
+          pending = "";
+          const appendResponse = await client.apiCall("chat.appendStream", {
+            channel: inputs.channelId,
+            ts: streamTs,
+            markdown_text: text,
+          }) as SlackStreamResponse;
+          if (!appendResponse.ok) {
+            throw new StreamingReplyError(
+              `Failed to append Slack stream: ${
+                appendResponse.error ?? "unknown_error"
+              }`,
+              { streamStarted, partialReply: reply },
+            );
+          }
+        };
 
-    const runChannelPseudoStreaming = async (): Promise<{
-      reply: string;
-      responseId?: string;
-      toolCallTypes: string[];
-    }> => {
-      console.log("Slack reply mode: pseudo-streaming in channel");
-
-      let reply = "";
-      let messageTs: string | undefined;
-      let pendingChars = 0;
-      let lastUpdateAt = Date.now();
-
-      const fallbackReply =
-        "Failed to generate a response. Please try again in a moment.";
-
-      const postInitialMessage = async (text: string): Promise<string> => {
-        const postResponse = await client.chat.postMessage({
-          channel: inputs.channelId,
-          text,
-        }) as SlackMessageResponse;
-        if (!postResponse.ok || !postResponse.ts) {
-          throw new Error(
-            `Failed to post pseudo-stream message: ${
-              postResponse.error ?? "unknown_error"
-            }`,
-          );
-        }
-        return postResponse.ts;
-      };
-
-      const updateMessage = async (ts: string, text: string): Promise<void> => {
-        const updateResponse = await client.chat.update({
-          channel: inputs.channelId,
-          ts,
-          text,
-        }) as SlackMessageResponse;
-        if (!updateResponse.ok) {
-          throw new Error(
-            `Failed to update pseudo-stream message: ${
-              updateResponse.error ?? "unknown_error"
-            }`,
-          );
-        }
-      };
-
-      try {
         const streamResult = await streamOpenAIResponse(
           openAIRequestInput,
           async (chunk) => {
+            throwIfTimedOut();
             reply += chunk;
-            if (!messageTs) {
-              messageTs = await postInitialMessage(reply);
-              lastUpdateAt = Date.now();
+            if (!streamTs) {
+              throwIfTimedOut();
+              const startResponse = await client.apiCall("chat.startStream", {
+                channel: inputs.channelId,
+                thread_ts: threadTs as string,
+                recipient_user_id: inputs.userId as string,
+                recipient_team_id: streamTeamId as string,
+                markdown_text: chunk,
+              }) as SlackStreamResponse;
+              if (!startResponse.ok || !startResponse.ts) {
+                throw new StreamingReplyError(
+                  `Failed to start Slack stream: ${
+                    startResponse.error ?? "unknown_error"
+                  }`,
+                  { streamStarted, partialReply: reply },
+                );
+              }
+              streamTs = startResponse.ts;
+              streamStarted = true;
               return;
             }
 
-            pendingChars += chunk.length;
-            const now = Date.now();
-            const elapsedMs = now - lastUpdateAt;
-            if (!shouldFlushChannelPseudoStream(pendingChars, elapsedMs)) {
-              return;
+            pending += chunk;
+            if (pending.length >= 160) {
+              await appendStream();
             }
-
-            await updateMessage(messageTs, reply);
-            pendingChars = 0;
-            lastUpdateAt = now;
           },
+          timeoutAbortController.signal,
         );
 
-        if (!messageTs) {
-          throw new Error("No stream output produced.");
+        if (!streamTs) {
+          throw new StreamingReplyError(
+            "No stream output produced.",
+            { streamStarted, partialReply: reply },
+          );
         }
 
-        if (pendingChars > 0) {
-          await updateMessage(messageTs, reply);
+        await appendStream();
+        throwIfTimedOut();
+        const stopResponse = await client.apiCall("chat.stopStream", {
+          channel: inputs.channelId,
+          ts: streamTs,
+        }) as SlackStreamResponse;
+        if (!stopResponse.ok) {
+          throw new StreamingReplyError(
+            `Failed to stop Slack stream: ${
+              stopResponse.error ?? "unknown_error"
+            }`,
+            { streamStarted, partialReply: reply },
+          );
         }
 
         return {
@@ -790,55 +914,170 @@ export default SlackFunction(
           responseId: streamResult.responseId,
           toolCallTypes: streamResult.toolCallTypes,
         };
-      } catch (error) {
-        console.warn(
-          `Pseudo-streaming mode failed. Falling back to static message. Error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        try {
-          if (messageTs) {
-            await updateMessage(messageTs, fallbackReply);
-          } else {
-            await postInitialMessage(fallbackReply);
+      };
+
+      const runChannelPseudoStreaming = async (): Promise<{
+        reply: string;
+        responseId?: string;
+        toolCallTypes: string[];
+      }> => {
+        console.log("Slack reply mode: pseudo-streaming in channel");
+
+        let reply = "";
+        let messageTs: string | undefined;
+        let pendingChars = 0;
+        let lastUpdateAt = Date.now();
+
+        const fallbackReply =
+          "Failed to generate a response. Please try again in a moment.";
+
+        const postInitialMessage = async (text: string): Promise<string> => {
+          throwIfTimedOut();
+          const postResponse = await client.chat.postMessage({
+            channel: inputs.channelId,
+            text,
+          }) as SlackMessageResponse;
+          if (!postResponse.ok || !postResponse.ts) {
+            throw new Error(
+              `Failed to post pseudo-stream message: ${
+                postResponse.error ?? "unknown_error"
+              }`,
+            );
           }
-        } catch (_fallbackSlackError) {
-          // Ignore fallback posting errors and return a safe reply string.
-        }
-        return { reply: fallbackReply, toolCallTypes: [] };
-      }
-    };
+          return postResponse.ts;
+        };
 
-    let reply: string;
-    let responseId: string | undefined;
-    let toolCallTypes: string[] = [];
+        const updateMessage = async (
+          ts: string,
+          text: string,
+        ): Promise<void> => {
+          throwIfTimedOut();
+          const updateResponse = await client.chat.update({
+            channel: inputs.channelId,
+            ts,
+            text,
+          }) as SlackMessageResponse;
+          if (!updateResponse.ok) {
+            throw new Error(
+              `Failed to update pseudo-stream message: ${
+                updateResponse.error ?? "unknown_error"
+              }`,
+            );
+          }
+        };
 
-    if (canStream) {
-      try {
-        const streamOutcome = await runStreaming();
-        reply = streamOutcome.reply;
-        responseId = streamOutcome.responseId;
-        toolCallTypes = streamOutcome.toolCallTypes;
-      } catch (error) {
-        const streamError = error instanceof StreamingReplyError
-          ? error
-          : undefined;
-        const errorMessage = error instanceof Error
-          ? error.message
-          : String(error);
-        if (streamError?.streamStarted) {
-          console.warn(
-            `Streaming mode failed after stream started. Skipping fallback to avoid duplicate replies. Error: ${errorMessage}`,
-          );
-          return {
-            outputs: {
-              reply: streamError.partialReply,
+        try {
+          const streamResult = await streamOpenAIResponse(
+            openAIRequestInput,
+            async (chunk) => {
+              throwIfTimedOut();
+              reply += chunk;
+              if (!messageTs) {
+                messageTs = await postInitialMessage(reply);
+                lastUpdateAt = Date.now();
+                return;
+              }
+
+              pendingChars += chunk.length;
+              const now = Date.now();
+              const elapsedMs = now - lastUpdateAt;
+              if (!shouldFlushChannelPseudoStream(pendingChars, elapsedMs)) {
+                return;
+              }
+
+              await updateMessage(messageTs, reply);
+              pendingChars = 0;
+              lastUpdateAt = now;
             },
+            timeoutAbortController.signal,
+          );
+
+          if (!messageTs) {
+            throw new Error("No stream output produced.");
+          }
+
+          if (pendingChars > 0) {
+            await updateMessage(messageTs, reply);
+          }
+
+          return {
+            reply: streamResult.reply,
+            responseId: streamResult.responseId,
+            toolCallTypes: streamResult.toolCallTypes,
           };
+        } catch (error) {
+          if (isFunctionTimedOut || isAbortError(error)) {
+            throw new FunctionTimeoutError(timeoutErrorMessage);
+          }
+          console.warn(
+            `Pseudo-streaming mode failed. Falling back to static message. Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          try {
+            if (messageTs) {
+              await updateMessage(messageTs, fallbackReply);
+            } else {
+              await postInitialMessage(fallbackReply);
+            }
+          } catch (_fallbackSlackError) {
+            // Ignore fallback posting errors and return a safe reply string.
+          }
+          return { reply: fallbackReply, toolCallTypes: [] };
         }
-        console.warn(
-          `Streaming mode failed before stream start. Falling back to non-streaming mode. Error: ${errorMessage}`,
-        );
+      };
+
+      let reply: string;
+      let responseId: string | undefined;
+      let toolCallTypes: string[] = [];
+
+      if (canStream) {
+        try {
+          const streamOutcome = await runStreaming();
+          reply = streamOutcome.reply;
+          responseId = streamOutcome.responseId;
+          toolCallTypes = streamOutcome.toolCallTypes;
+        } catch (error) {
+          if (isFunctionTimedOut || isAbortError(error)) {
+            throw new FunctionTimeoutError(timeoutErrorMessage);
+          }
+          const streamError = error instanceof StreamingReplyError
+            ? error
+            : undefined;
+          const errorMessage = error instanceof Error
+            ? error.message
+            : String(error);
+          if (streamError?.streamStarted) {
+            console.warn(
+              `Streaming mode failed after stream started. Skipping fallback to avoid duplicate replies. Error: ${errorMessage}`,
+            );
+            return {
+              outputs: {
+                reply: streamError.partialReply,
+              },
+            };
+          }
+          console.warn(
+            `Streaming mode failed before stream start. Falling back to non-streaming mode. Error: ${errorMessage}`,
+          );
+          const nonStreamingOutcome = await runNonStreaming({
+            threadTs: replyInThread ? threadTs : undefined,
+          });
+          reply = nonStreamingOutcome.reply;
+          responseId = nonStreamingOutcome.responseId;
+          toolCallTypes = nonStreamingOutcome.toolCallTypes;
+        }
+      } else if (!replyInThread) {
+        const pseudoStreamingOutcome = await runChannelPseudoStreaming();
+        reply = pseudoStreamingOutcome.reply;
+        responseId = pseudoStreamingOutcome.responseId;
+        toolCallTypes = pseudoStreamingOutcome.toolCallTypes;
+      } else {
+        if (!streamTeamId) {
+          console.log("Streaming disabled: SLACK_TEAM_ID is not configured.");
+        } else {
+          console.log("Streaming disabled: userId/messageTs is missing.");
+        }
         const nonStreamingOutcome = await runNonStreaming({
           threadTs: replyInThread ? threadTs : undefined,
         });
@@ -846,60 +1085,65 @@ export default SlackFunction(
         responseId = nonStreamingOutcome.responseId;
         toolCallTypes = nonStreamingOutcome.toolCallTypes;
       }
-    } else if (!replyInThread) {
-      const pseudoStreamingOutcome = await runChannelPseudoStreaming();
-      reply = pseudoStreamingOutcome.reply;
-      responseId = pseudoStreamingOutcome.responseId;
-      toolCallTypes = pseudoStreamingOutcome.toolCallTypes;
-    } else {
-      if (!streamTeamId) {
-        console.log("Streaming disabled: SLACK_TEAM_ID is not configured.");
-      } else {
-        console.log("Streaming disabled: userId/messageTs is missing.");
+
+      if (toolCallTypes.length > 0) {
+        console.log(`OpenAI tools used: ${toolCallTypes.join(", ")}`);
       }
-      const nonStreamingOutcome = await runNonStreaming({
-        threadTs: replyInThread ? threadTs : undefined,
+
+      throwIfTimedOut();
+      if (!responseId && !mentionThreadTsHistoryDirty) {
+        return {
+          outputs: {
+            reply,
+          },
+        };
+      }
+
+      const updateSessionResponse = await client.apps.datastore.update<
+        typeof ConversationSessionDatastore.definition
+      >({
+        datastore: "MessageHistory",
+        item: {
+          channelId: sessionChannelId,
+          systemMessage,
+          mentionThreadTsHistory,
+          ...(responseId
+            ? {
+              previousResponseId: responseId,
+              lastInteractionAt: nowMs,
+            }
+            : {}),
+        },
       });
-      reply = nonStreamingOutcome.reply;
-      responseId = nonStreamingOutcome.responseId;
-      toolCallTypes = nonStreamingOutcome.toolCallTypes;
-    }
 
-    if (toolCallTypes.length > 0) {
-      console.log(`OpenAI tools used: ${toolCallTypes.join(", ")}`);
-    }
+      if (!updateSessionResponse.ok) {
+        return {
+          error:
+            `Failed to save conversation session: ${updateSessionResponse.error}`,
+        };
+      }
 
-    if (!responseId) {
       return {
         outputs: {
           reply,
         },
       };
-    }
-
-    const updateSessionResponse = await client.apps.datastore.update<
-      typeof ConversationSessionDatastore.definition
-    >({
-      datastore: "MessageHistory",
-      item: {
-        channelId: sessionChannelId,
-        systemMessage,
-        previousResponseId: responseId,
-        lastInteractionAt: nowMs,
-      },
-    });
-
-    if (!updateSessionResponse.ok) {
-      return {
-        error:
-          `Failed to save conversation session: ${updateSessionResponse.error}`,
-      };
-    }
-
-    return {
-      outputs: {
-        reply,
-      },
     };
+
+    try {
+      return await Promise.race([execute(), timeoutPromise]);
+    } catch (error) {
+      if (error instanceof FunctionTimeoutError) {
+        console.error(`StreamReplyFunction timed out: ${error.message}`);
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutAlertTimerId);
+    }
   },
 );
