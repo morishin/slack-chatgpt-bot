@@ -93,11 +93,17 @@ Deno.test("hasAnyMentionToken detects mention token", () => {
 
 Deno.test("hasSpecificMentionToken detects target bot mention only", () => {
   assertEquals(
-    streamReplyInternals.hasSpecificMentionToken("<@U123ABC45> hello", "U123ABC45"),
+    streamReplyInternals.hasSpecificMentionToken(
+      "<@U123ABC45> hello",
+      "U123ABC45",
+    ),
     true,
   );
   assertEquals(
-    streamReplyInternals.hasSpecificMentionToken("<@U999ZZZ88> hello", "U123ABC45"),
+    streamReplyInternals.hasSpecificMentionToken(
+      "<@U999ZZZ88> hello",
+      "U123ABC45",
+    ),
     false,
   );
 });
