@@ -21,5 +21,11 @@ export const ConversationSessionDatastore = DefineDatastore({
     replyInThread: {
       type: Schema.types.boolean,
     },
+    mentionThreadTsHistory: {
+      type: Schema.types.array,
+      items: {
+        type: Schema.types.string,
+      },
+    },
   },
 });

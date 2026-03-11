@@ -102,23 +102,34 @@ Deno.test("hasSpecificMentionToken detects target bot mention only", () => {
   );
 });
 
-Deno.test("threadHasSpecificMentionToken detects mention anywhere in thread", () => {
+Deno.test("normalizeMentionThreadTsHistory keeps valid thread ts only", () => {
   assertEquals(
-    streamReplyInternals.threadHasSpecificMentionToken(
-      [
-        { text: "hello" },
-        { text: "<@U123ABC45> can you help?" },
-      ],
-      "U123ABC45",
-    ),
-    true,
+    streamReplyInternals.normalizeMentionThreadTsHistory([
+      "1772877958.777800",
+      "invalid",
+      1,
+      null,
+    ]),
+    ["1772877958.777800"],
   );
+});
+
+Deno.test("updateMentionThreadTsHistory prepends and deduplicates", () => {
+  const updated = streamReplyInternals.updateMentionThreadTsHistory(
+    ["1111111111.000001", "2222222222.000002"],
+    "2222222222.000002",
+  );
+
+  assertEquals(updated, ["2222222222.000002", "1111111111.000001"]);
+});
+
+Deno.test("updateMentionThreadTsHistory keeps same list if already latest", () => {
   assertEquals(
-    streamReplyInternals.threadHasSpecificMentionToken(
-      [{ text: "hello" }, { text: "no mention" }],
-      "U123ABC45",
+    streamReplyInternals.updateMentionThreadTsHistory(
+      ["1111111111.000001", "2222222222.000002"],
+      "1111111111.000001",
     ),
-    false,
+    ["1111111111.000001", "2222222222.000002"],
   );
 });
 

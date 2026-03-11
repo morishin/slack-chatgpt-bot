@@ -49,14 +49,6 @@ type SlackMessageResponse = {
   ts?: string;
 };
 
-type SlackConversationRepliesResponse = {
-  ok: boolean;
-  error?: string;
-  messages?: Array<{
-    text?: string;
-  }>;
-};
-
 type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
@@ -410,6 +402,7 @@ const toThreadTs = (
 
 const CHANNEL_PSEUDO_STREAM_MIN_APPEND_CHARS = 160;
 const CHANNEL_PSEUDO_STREAM_MIN_UPDATE_INTERVAL_MS = 800;
+const RECENT_MENTION_THREAD_TS_LIMIT = 40;
 
 const shouldFlushChannelPseudoStream = (
   pendingChars: number,
@@ -446,15 +439,31 @@ const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 const hasSpecificMentionToken = (text: string, userId: string): boolean =>
   text.includes(`<@${userId}>`);
 
-const threadHasSpecificMentionToken = (
-  messages: Array<{ text?: string }> | undefined,
-  userId: string,
-): boolean => {
-  if (!messages) return false;
-  return messages.some((message) =>
-    typeof message.text === "string" &&
-    hasSpecificMentionToken(message.text, userId)
+const normalizeMentionThreadTsHistory = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string =>
+    typeof entry === "string" && /^\d+\.\d+$/.test(entry)
   );
+};
+
+const prependMentionThreadTs = (
+  history: string[],
+  threadTs: string,
+): boolean => {
+  return history.length > 0 && history[0] === threadTs;
+};
+
+const updateMentionThreadTsHistory = (
+  history: string[],
+  threadTs: string,
+): string[] => {
+  if (prependMentionThreadTs(history, threadTs)) {
+    return history;
+  }
+  return [
+    threadTs,
+    ...history.filter((existingThreadTs) => existingThreadTs !== threadTs),
+  ].slice(0, RECENT_MENTION_THREAD_TS_LIMIT);
 };
 
 export const streamReplyInternals = {
@@ -468,7 +477,8 @@ export const streamReplyInternals = {
   shouldHandleEventType,
   hasAnyMentionToken,
   hasSpecificMentionToken,
-  threadHasSpecificMentionToken,
+  normalizeMentionThreadTsHistory,
+  updateMentionThreadTsHistory,
 };
 
 export default SlackFunction(
@@ -515,22 +525,45 @@ export default SlackFunction(
     const replyInThread = (sessionResponse.item?.replyInThread as
       | boolean
       | undefined) ?? false;
+    const currentThreadTs = toThreadTs(
+      inputs.messageTs as string | number | undefined,
+    );
+    let mentionThreadTsHistory = normalizeMentionThreadTsHistory(
+      sessionResponse.item?.mentionThreadTsHistory,
+    );
+    let mentionThreadTsHistoryDirty = false;
+    const markThreadAsMentioned = (threadTs: string) => {
+      const nextHistory = updateMentionThreadTsHistory(
+        mentionThreadTsHistory,
+        threadTs,
+      );
+      if (nextHistory.length !== mentionThreadTsHistory.length ||
+        nextHistory.some((entry, index) => mentionThreadTsHistory[index] !== entry)) {
+        mentionThreadTsHistory = nextHistory;
+        mentionThreadTsHistoryDirty = true;
+      }
+    };
+    const persistMentionThreadHistory = async (): Promise<string | undefined> => {
+      if (!mentionThreadTsHistoryDirty) return undefined;
+      const updateResponse = await client.apps.datastore.update<
+        typeof ConversationSessionDatastore.definition
+      >({
+        datastore: "MessageHistory",
+        item: {
+          channelId: sessionChannelId,
+          systemMessage,
+          mentionThreadTsHistory,
+        },
+      });
+      if (!updateResponse.ok) {
+        return `Failed to save mentionThreadTsHistory: ${updateResponse.error}`;
+      }
+      mentionThreadTsHistoryDirty = false;
+      return undefined;
+    };
     if (!shouldHandleEventType(eventType, replyInThread)) {
       console.log(
         `Skipping: StreamReplyFunction (eventType=${eventType}, replyInThread=${replyInThread})`,
-      );
-      return {
-        outputs: {
-          reply: "",
-        },
-      };
-    }
-    if (
-      normalizedEventType === "message_posted" &&
-      hasAnyMentionToken(inputs.systemMessage)
-    ) {
-      console.log(
-        "Skipping: StreamReplyFunction (message_posted with mention text)",
       );
       return {
         outputs: {
@@ -564,10 +597,7 @@ export default SlackFunction(
         };
       }
 
-      const threadTs = toThreadTs(
-        inputs.messageTs as string | number | undefined,
-      );
-      if (!threadTs) {
+      if (!currentThreadTs) {
         console.log(
           "Skipping: StreamReplyFunction (message_posted without valid thread ts)",
         );
@@ -578,18 +608,14 @@ export default SlackFunction(
         };
       }
 
-      // Only continue thread follow-up if any earlier message in this thread
-      // explicitly mentions this bot.
-      const repliesResponse = await client.conversations.replies({
-        channel: inputs.channelId,
-        ts: threadTs,
-        oldest: threadTs,
-        inclusive: true,
-        limit: 200,
-      }) as SlackConversationRepliesResponse;
-      if (!repliesResponse.ok) {
+      if (hasSpecificMentionToken(inputs.systemMessage, botUserId)) {
+        markThreadAsMentioned(currentThreadTs);
+        const persistError = await persistMentionThreadHistory();
+        if (persistError) {
+          return { error: persistError };
+        }
         console.log(
-          `Skipping: StreamReplyFunction (failed to fetch thread messages: ${repliesResponse.error ?? "unknown_error"})`,
+          "Skipping: StreamReplyFunction (message_posted with bot mention text)",
         );
         return {
           outputs: {
@@ -598,9 +624,9 @@ export default SlackFunction(
         };
       }
 
-      if (!threadHasSpecificMentionToken(repliesResponse.messages, botUserId)) {
+      if (!mentionThreadTsHistory.includes(currentThreadTs)) {
         console.log(
-          "Skipping: StreamReplyFunction (thread has no bot mention history)",
+          "Skipping: StreamReplyFunction (thread is not in mentionThreadTsHistory)",
         );
         return {
           outputs: {
@@ -608,6 +634,10 @@ export default SlackFunction(
           },
         };
       }
+    }
+
+    if (normalizedEventType === "app_mentioned" && currentThreadTs) {
+      markThreadAsMentioned(currentThreadTs);
     }
 
     const previousResponseId = getPreviousResponseId(
@@ -691,9 +721,7 @@ export default SlackFunction(
     };
 
     const streamTeamId = env.SLACK_TEAM_ID?.trim();
-    const threadTs = toThreadTs(
-      inputs.messageTs as string | number | undefined,
-    );
+    const threadTs = currentThreadTs;
     const canStream = Boolean(
       replyInThread &&
         streamTeamId && inputs.userId && threadTs,
@@ -951,7 +979,7 @@ export default SlackFunction(
       console.log(`OpenAI tools used: ${toolCallTypes.join(", ")}`);
     }
 
-    if (!responseId) {
+    if (!responseId && !mentionThreadTsHistoryDirty) {
       return {
         outputs: {
           reply,
@@ -966,8 +994,13 @@ export default SlackFunction(
       item: {
         channelId: sessionChannelId,
         systemMessage,
-        previousResponseId: responseId,
-        lastInteractionAt: nowMs,
+        mentionThreadTsHistory,
+        ...(responseId
+          ? {
+            previousResponseId: responseId,
+            lastInteractionAt: nowMs,
+          }
+          : {}),
       },
     });
 
