@@ -91,6 +91,17 @@ Deno.test("hasAnyMentionToken detects mention token", () => {
   assertEquals(streamReplyInternals.hasAnyMentionToken("hello"), false);
 });
 
+Deno.test("hasSpecificMentionToken detects target bot mention only", () => {
+  assertEquals(
+    streamReplyInternals.hasSpecificMentionToken("<@U123ABC45> hello", "U123ABC45"),
+    true,
+  );
+  assertEquals(
+    streamReplyInternals.hasSpecificMentionToken("<@U999ZZZ88> hello", "U123ABC45"),
+    false,
+  );
+});
+
 Deno.test("extractResponseText reads output_text field", () => {
   const text = streamReplyInternals.extractResponseText({
     output_text: "hello from output_text",

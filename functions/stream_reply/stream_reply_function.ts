@@ -49,6 +49,14 @@ type SlackMessageResponse = {
   ts?: string;
 };
 
+type SlackConversationRepliesResponse = {
+  ok: boolean;
+  error?: string;
+  messages?: Array<{
+    text?: string;
+  }>;
+};
+
 type ConversationSession = {
   previousResponseId?: string;
   lastInteractionAt?: number;
@@ -435,6 +443,9 @@ const shouldHandleEventType = (
 
 const hasAnyMentionToken = (text: string): boolean => /<@[A-Z0-9]+>/.test(text);
 
+const hasSpecificMentionToken = (text: string, userId: string): boolean =>
+  text.includes(`<@${userId}>`);
+
 export const streamReplyInternals = {
   getChainTimeoutMs,
   getPreviousResponseId,
@@ -445,6 +456,7 @@ export const streamReplyInternals = {
   normalizeEventType,
   shouldHandleEventType,
   hasAnyMentionToken,
+  hasSpecificMentionToken,
 };
 
 export default SlackFunction(
@@ -514,11 +526,69 @@ export default SlackFunction(
         },
       };
     }
-    if (normalizedEventType === "message_posted" && inputs.userId) {
+    if (normalizedEventType === "message_posted") {
       const authTestResponse = await client.auth.test();
-      if (authTestResponse.ok && authTestResponse.user_id === inputs.userId) {
+      const botUserId = authTestResponse.ok
+        ? authTestResponse.user_id
+        : undefined;
+      if (!botUserId) {
+        console.log(
+          `Skipping: StreamReplyFunction (failed auth.test for message_posted: ${authTestResponse.error ?? "unknown_error"})`,
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+      if (botUserId === inputs.userId) {
         console.log(
           "Skipping: StreamReplyFunction (message_posted from bot user)",
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+
+      const threadTs = toThreadTs(
+        inputs.messageTs as string | number | undefined,
+      );
+      if (!threadTs) {
+        console.log(
+          "Skipping: StreamReplyFunction (message_posted without valid thread ts)",
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+
+      // Only continue thread follow-up if the thread root explicitly mentions this bot.
+      const repliesResponse = await client.conversations.replies({
+        channel: inputs.channelId,
+        ts: threadTs,
+        oldest: threadTs,
+        inclusive: true,
+        limit: 1,
+      }) as SlackConversationRepliesResponse;
+      if (!repliesResponse.ok) {
+        console.log(
+          `Skipping: StreamReplyFunction (failed to fetch thread root: ${repliesResponse.error ?? "unknown_error"})`,
+        );
+        return {
+          outputs: {
+            reply: "",
+          },
+        };
+      }
+
+      const rootText = repliesResponse.messages?.[0]?.text ?? "";
+      if (!hasSpecificMentionToken(rootText, botUserId)) {
+        console.log(
+          "Skipping: StreamReplyFunction (thread root is not bot-mention initiated)",
         );
         return {
           outputs: {
