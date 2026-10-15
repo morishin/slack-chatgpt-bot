@@ -1,7 +1,4 @@
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "jsr:@std/assert@^1.0.19";
 import { streamReplyInternals } from "./stream_reply_function.ts";
 
 Deno.test("getPreviousResponseId returns undefined after timeout", () => {
